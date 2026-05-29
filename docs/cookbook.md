@@ -998,3 +998,223 @@ When you start from a target not covered above, set parameters in this order:
 
 When in doubt, run twice with different thresholds and compare HTML reports.
 The pipeline is fast enough that A/B sweeps are practical.
+
+---
+
+## Recipe 12 — Avian Influenza A via RT-LAMP (on-farm / wild-bird biosecurity)
+
+**Goal.** Detect highly pathogenic avian influenza A (HPAI, H5N1/H5N2/H7N9
+and related subtypes) from cloacal or oropharyngeal swabs on-farm, without
+a laboratory cold chain, in under 60 minutes.
+
+**Why it's interesting.** HPAI H5N1 clade 2.3.4.4b caused catastrophic losses
+in poultry flocks across North America and Europe from 2021 onward, with
+ongoing spread into dairy cattle herds.  Rapid on-site detection using a
+BioVind-style portable platform is exactly the workflow that allows
+quarantine and culling decisions to be made before the virus spreads to
+adjacent houses.  This recipe targets the influenza A **M-gene** (matrix
+protein M1/M2) — the most conserved genomic segment across all influenza A
+subtypes and the universal target of WHO-recommended influenza A molecular
+assays.
+
+Influenza A is a **negative-sense ssRNA** virus, so detection requires
+**RT-LAMP**.  Design primers against the cDNA sequence; the pipeline handles
+this automatically because sequences are deposited as cDNA in NCBI.  After
+the run, validate Tm suitability with `lamp-forge rt-check` before ordering.
+
+**Target.** Segment 7 (M-gene) — universal influenza A marker; does not
+discriminate H5 from H3 or H1, but that is desirable for a first-pass
+pan-influenza-A screen.  For subtype resolution, run a second assay targeting
+the HA gene with H5- or H7-specific primers (separate design run).
+
+```yaml
+target:
+  name: influenza_a_M_gene
+  taxon_id: 11520   # Influenza A virus
+  gene: M           # matrix protein; alt annotation: "M segment", "segment 7"
+  max_sequences: 40 # span H5N1, H5N2, H7N9, H3N2, H1N1 for broad conservation
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight — influenza B is the closest non-target
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.35        # RNA viruses vary more than bacteria
+  min_region_length: 200
+
+primer:
+  tm_min: 63.0                   # RT-LAMP one-step: co-activity with RTx enzyme
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/influenza_a_M
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config note.** `primer.tm_min: 63.0` — one-step RT-LAMP at 63-65 degC;
+same rationale as Recipe 11 (PRRSV).  Run `lamp-forge rt-check` after to
+confirm all sets fall in the optimised Tm window.
+
+**Off-target panel.** Other respiratory pathogens and host background from
+oropharyngeal swabs:
+
+| File | Source | Why |
+|---|---|---|
+| `influenza_b_M.fasta` | NC_002204.1 | Closest non-target: IBV segment 7; ~40% aa identity to IAV M1 |
+| `newcastle_disease_virus.fasta` | NC_002617.1 | Co-circulating avian paramyxovirus |
+| `infectious_bronchitis_virus.fasta` | NC_001451.1 | Avian coronavirus, respiratory niche |
+| `avian_metapneumovirus.fasta` | NC_007652.1 | AMPV, respiratory, co-circulates with HPAI |
+| `gallus_gallus_fragment.fasta` | Subset of GalGal6 chr1 | Host DNA from cloacal swab |
+
+**Expected output.** The IAV M-gene has a well-known conserved central
+region (~positions 300-900 nt) that anchors all published RT-PCR primer
+pairs.  Top-scoring LAMP-Forge sets should localise there, with zero flagged
+hits against IBV, NDV, or AMPV.
+
+**Verify RT-LAMP readiness.**
+
+```bash
+lamp-forge rt-check \
+  --input results/influenza_a_M/primer_sets.json \
+  --na-type rna \
+  --out-csv results/influenza_a_M/rt_check.csv
+```
+
+**Multiplex with other farm-biosecurity targets.** HPAI often co-circulates
+with PRRSV, ASFV, and other notifiable pathogens.  Design each target
+independently, then combine:
+
+```bash
+lamp-forge panel \
+  --set IAV=results/influenza_a_M/primer_sets.json \
+  --set PRRSV=results/prrsv_ORF7/primer_sets.json \
+  --set ASFV=results/asfv_p72/primer_sets.json \
+  --top-per-target 5 \
+  --out results/farm_biosecurity_panel
+```
+
+**Then generate the pooling sheet** to tell the wet-lab how to combine all
+18 (3 x 6) primer stocks into a single 10x working mix:
+
+```bash
+lamp-forge pool \
+  --panel results/farm_biosecurity_panel/panel.json \
+  --stock-conc 200 \
+  --total-volume 500 \
+  --out results/farm_biosecurity_panel/pool_sheet.csv
+```
+
+The `pool_sheet.csv` tells you exactly how many microlitres of each primer
+synthesis tube to pipette.  For a 3-target panel with 200 uM stocks the
+water fraction is (1 - 3x44/200) * 500 = 170 uL, leaving plenty of room.
+
+**Field note.** HPAI is a Tier 1/2 select agent in some jurisdictions.  Use
+inactivated positive controls (e.g. heat-killed virus at a certified BSL-2
+facility) for initial wet-lab validation.  The in silico assay design this
+pipeline produces does not require BSL-3 handling.
+
+---
+
+## Recipe 13 — Pooling a multiplex working stock (`lamp-forge pool`)
+
+**Goal.** After designing and screening a multi-target panel with
+`lamp-forge panel`, produce the pipetting sheet that tells the wet-lab
+*exactly* how to combine the individual primer synthesis tubes into a single
+10x working-stock pool ready for the portable device.
+
+**Why it's needed.** Primer synthesis vendors (IDT, Twist) ship each oligo
+in its own tube at 100 uM.  For a multiplex LAMP panel with N targets you
+have 6N separate tubes.  Pipetting the correct volume from each into a common
+vessel — respecting the role-specific LAMP stoichiometry (FIP/BIP at 8x the
+molar concentration of outer primers) — is error-prone by hand and grows
+quadratically in complexity with panel size.  `lamp-forge pool` calculates it
+in one command.
+
+**LAMP 10x working-stock stoichiometry** (Li et al. 2018 / NEB E1700):
+
+| Role | Pool conc (uM) | Final in 1x reaction (uM) |
+|---|---|---|
+| FIP, BIP | 16 | 1.6 |
+| LF, LB | 4 | 0.4 |
+| F3, B3 | 2 | 0.2 |
+
+**Stock-concentration feasibility.**  The minimum required stock concentration
+equals the sum of all primer pool concentrations across all targets.  For a
+6-primer set that is 44 uM per target:
+
+| Targets (N) | Min stock (uM) | Available from IDT/Twist? |
+|---|---|---|
+| 1 | 44 | Yes — standard 100 uM resuspension |
+| 2 | 88 | Yes — standard 100 uM |
+| 3 | 132 | Request 200 uM resuspension |
+| 6 | 264 | Request 500 uM resuspension |
+| 11 | 484 | Request 500 uM or vendor pre-mix |
+| 18 | 792 | Vendor pre-mix recommended |
+
+If `lamp-forge pool` raises a stock-concentration error, increase
+`--stock-conc` to match the minimum shown in the error message.
+
+**Usage.**
+
+```bash
+# After lamp-forge panel has produced panel.json:
+
+# 2-target panel at standard 100 uM stocks, 500 uL pool:
+lamp-forge pool \
+  --panel results/souring_panel/panel.json \
+  --stock-conc 100 \
+  --total-volume 500 \
+  --out results/souring_panel/pool_sheet.csv
+
+# 3-target oilfield souring panel (SRB + MCR + 16S), 200 uM stocks:
+lamp-forge pool \
+  --panel results/souring_panel/panel.json \
+  --stock-conc 200 \
+  --total-volume 500 \
+  --out results/souring_panel/pool_sheet.csv
+```
+
+**Reading the output.**  `pool_sheet.csv` has one row per primer plus a final
+WATER row.  Pipette in any order; the last step is topping up to the total
+volume with nuclease-free water.  Each target's primers are grouped together
+so you can process one synthesis plate at a time.
+
+```
+target  role  primer_name  sequence  stock_conc_um  target_conc_um  vol_stock_ul
+SRB     F3    SRB_F3       ACGT...   100.0          2.0             10.000
+SRB     B3    SRB_B3       TGCA...   100.0          2.0             10.000
+SRB     FIP   SRB_FIP      ACGT...   100.0         16.0             80.000
+SRB     BIP   SRB_BIP      TGCA...   100.0         16.0             80.000
+SRB     LF    SRB_LF       GGCC...   100.0          4.0             20.000
+SRB     LB    SRB_LB       CCGG...   100.0          4.0             20.000
+MCR     F3    MCR_F3       ...
+...
+WATER   ...   Nuclease-free water              ...             280.000
+```
+
+**Script usage.** The pool calculator is also importable:
+
+```python
+from lamp_forge.pool import PoolingParams, build_pool_plan, write_pool_csv
+import json
+from pathlib import Path
+
+panel = json.loads(Path("results/souring_panel/panel.json").read_text())
+params = PoolingParams(stock_conc_um=200.0, total_pool_volume_ul=500.0)
+plan = build_pool_plan(panel["selection"], params)
+write_pool_csv(plan, Path("results/souring_panel/pool_sheet.csv"))
+print(f"{plan.n_primers} primers, {plan.water_volume_ul:.1f} uL water")
+```

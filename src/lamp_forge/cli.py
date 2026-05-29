@@ -665,6 +665,144 @@ def rt_check(
         click.echo(f"Results written to {out_csv}")
 
 
+@cli.command(name="pool")
+@click.option(
+    "--panel",
+    "panel_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="panel.json produced by 'lamp-forge panel'.",
+)
+@click.option(
+    "--stock-conc",
+    "stock_conc_um",
+    type=float,
+    default=100.0,
+    show_default=True,
+    help=(
+        "Concentration of each synthesised primer stock tube (uM). "
+        "IDT/Twist standard is 100 uM; request 200 uM for 3+ target panels."
+    ),
+)
+@click.option(
+    "--total-volume",
+    "total_pool_volume_ul",
+    type=float,
+    default=500.0,
+    show_default=True,
+    help="Target total volume of the pooled 10x working mix (uL).",
+)
+@click.option(
+    "--out",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output CSV path. Defaults to <panel_dir>/pool_sheet.csv.",
+)
+def pool(
+    panel_path: Path,
+    stock_conc_um: float,
+    total_pool_volume_ul: float,
+    out_csv: Path | None,
+) -> None:
+    r"""Calculate primer volumes for a multiplex pooled working stock.
+
+    Reads the panel.json produced by 'lamp-forge panel' and emits a
+    pipetting sheet: for each primer in the selected panel, how many uL
+    to transfer from its synthesis stock tube into the shared working mix.
+
+    Standard LAMP 10x working-stock concentrations applied per target:
+
+    \b
+        FIP / BIP  : 16 uM  ->  1.6 uM final in the 1x reaction
+        LF  / LB   :  4 uM  ->  0.4 uM final in the 1x reaction
+        F3  / B3   :  2 uM  ->  0.2 uM final in the 1x reaction
+
+    The pool is used at 1/10 volume per reaction (e.g. 2.5 uL in a 25 uL
+    LAMP reaction).  Each target contributes the same per-reaction primer
+    copy number as it would in a single-target LAMP.
+
+    \b
+    Example (oilfield souring 3-target panel, 200 uM stocks):
+        lamp-forge pool \\
+          --panel results/souring_panel/panel.json \\
+          --stock-conc 200 \\
+          --total-volume 500 \\
+          --out results/souring_panel/pool_sheet.csv
+
+    Note: the minimum required stock concentration equals the sum of all
+    primer working concentrations across all targets (44 uM x N targets for
+    complete 6-primer sets). Use --stock-conc to match your vendor resuspension.
+    """
+    import json
+
+    from lamp_forge.pool import PoolingParams, build_pool_plan, write_pool_csv
+
+    with panel_path.open(encoding="utf-8") as fh:
+        panel_data: dict[str, object] = json.load(fh)
+
+    selection_raw = panel_data.get("selection", [])
+    if not isinstance(selection_raw, list) or not selection_raw:
+        click.secho("No selection found in panel.json.", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        params = PoolingParams(
+            stock_conc_um=stock_conc_um,
+            total_pool_volume_ul=total_pool_volume_ul,
+        )
+    except ValueError as exc:
+        click.secho(f"Parameter error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    try:
+        plan = build_pool_plan(selection_raw, params)
+    except ValueError as exc:
+        click.secho(f"Pool calculation error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    if out_csv is None:
+        out_csv = panel_path.parent / "pool_sheet.csv"
+
+    write_pool_csv(plan, out_csv)
+
+    click.secho(
+        f"Pool: {plan.n_targets} target(s), {plan.n_primers} primers, "
+        f"{plan.total_pool_volume_ul:.0f} uL total "
+        f"({plan.water_volume_ul:.1f} uL water).",
+        fg="green",
+    )
+    click.echo(f"Pooling sheet: {out_csv}")
+    click.echo("")
+
+    col_t = max((len(e.target_label) for e in plan.entries), default=10)
+    col_t = max(col_t, 10)
+    col_n = max((len(e.primer_name) for e in plan.entries), default=12)
+    col_n = max(col_n, 12)
+    header = (
+        f"{'Target':<{col_t}}  {'Role':<5}  {'Name':<{col_n}}  "
+        f"{'Stock conc':>10}  {'Pool conc':>10}  {'Vol (uL)':>9}"
+    )
+    click.echo(header)
+    click.echo("-" * len(header))
+    for e in plan.entries:
+        click.echo(
+            f"{e.target_label:<{col_t}}  {e.primer_role:<5}  "
+            f"{e.primer_name:<{col_n}}  "
+            f"{e.stock_conc_um:>9.0f}u  {e.target_conc_um:>9.1f}u  "
+            f"{e.vol_stock_ul:>9.3f}"
+        )
+    click.echo("-" * len(header))
+    click.echo(
+        f"{'Nuclease-free water':<{col_t + 5 + col_n + 25}}  "
+        f"{plan.water_volume_ul:>9.3f}"
+    )
+    click.echo(
+        f"{'TOTAL':<{col_t + 5 + col_n + 25}}  "
+        f"{plan.total_pool_volume_ul:>9.3f}"
+    )
+
+
 @cli.command(name="version")
 def version() -> None:
     """Print version and exit."""
