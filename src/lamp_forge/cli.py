@@ -513,6 +513,158 @@ def export(
     click.echo(f"Format: {vendor_fmt.value.upper()} bulk order")
 
 
+@cli.command(name="rt-check")
+@click.option(
+    "--input",
+    "input_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="primer_sets.json produced by 'lamp-forge run'.",
+)
+@click.option(
+    "--na-type",
+    "na_type",
+    type=click.Choice(["rna", "dna"], case_sensitive=False),
+    default="rna",
+    show_default=True,
+    help=(
+        "Target nucleic acid type. "
+        "Use 'rna' for RNA virus targets (one-step RT-LAMP); "
+        "'dna' confirms RT is not required."
+    ),
+)
+@click.option(
+    "--rt-min-tm",
+    "rt_min_tm",
+    type=float,
+    default=63.0,
+    show_default=True,
+    help=(
+        "Minimum Tm (degC) for core primers (F3/B3/FIP/BIP) in one-step RT-LAMP. "
+        "Primers below this value may reduce reverse-transcriptase co-activity."
+    ),
+)
+@click.option(
+    "--top-n",
+    "top_n",
+    default=None,
+    type=int,
+    help="Assess only the top-N ranked sets (default: all).",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write full results table to a CSV file.",
+)
+def rt_check(
+    input_path: Path,
+    na_type: str,
+    rt_min_tm: float,
+    top_n: int | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Check whether primer sets are optimised for one-step RT-LAMP.
+
+    RNA-target LAMP assays (PRRSV, avian influenza, FMDV, SARS-CoV-2, etc.)
+    require a reverse transcription step before amplification.  One-step
+    RT-LAMP combines the RT and LAMP reactions at 63-65 degC; primers designed
+    for the broad 60-65 degC window may have Tms that are suboptimal when the
+    RT enzyme must remain co-active with Bst polymerase.
+
+    Reads a primer_sets.json produced by 'lamp-forge run' and reports, for
+    each set, how many primers fall within the RT-LAMP optimal Tm range and
+    whether the set is ready to order for one-step RT-LAMP.
+
+    Sets marked NOT OPTIMIZED should be re-designed with a tighter Tm window
+    (primer.tm_min >= 63.0) before ordering for RNA-virus applications.
+
+    \b
+    Example (PRRSV ORF7 assay targeting RNA):
+        lamp-forge rt-check \\
+          --input results/prrsv_orf7/primer_sets.json \\
+          --na-type rna \\
+          --out-csv results/prrsv_orf7/rt_check.csv
+
+    \b
+    Example (ASFV DNA assay, confirm RT not needed):
+        lamp-forge rt-check \\
+          --input results/asfv_p72/primer_sets.json \\
+          --na-type dna
+    """
+    import json
+
+    from lamp_forge.rt_lamp import (
+        RtLampParams,
+        TargetNucleicAcid,
+        check_primer_sets_for_rt_lamp,
+        write_rt_check_csv,
+    )
+
+    with input_path.open(encoding="utf-8") as fh:
+        data: dict[str, object] = json.load(fh)
+
+    sets_data = data.get("primer_sets", [])
+    if not isinstance(sets_data, list) or not sets_data:
+        click.secho("No primer sets found in the input file.", fg="red", err=True)
+        sys.exit(1)
+
+    target_na = TargetNucleicAcid(na_type.lower())
+    try:
+        params = RtLampParams(rt_min_tm=rt_min_tm)
+    except ValueError as exc:
+        click.secho(f"Parameter error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    results = check_primer_sets_for_rt_lamp(
+        sets_data,
+        target_na=target_na,
+        params=params,
+        top_n=top_n,
+    )
+
+    click.echo(f"RT-LAMP compatibility check -- target: {na_type.upper()}")
+    if target_na is TargetNucleicAcid.RNA:
+        click.echo(
+            f"Parameters: core primers {params.rt_min_tm:.1f}-{params.rt_max_tm:.1f} degC, "
+            f"loop primers >= {params.loop_min_tm:.1f} degC"
+        )
+    click.echo("")
+
+    col_id = max(len(r.set_id) for r in results) if results else 10
+    col_id = max(col_id, 8)
+    header = (
+        f"{'Set ID':<{col_id}}  {'N':>2}  {'In-range':>8}  "
+        f"{'Core-low':>8}  Status"
+    )
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for r in results:
+        status = "OK" if r.is_rt_optimized else "NOT OPTIMIZED"
+        click.echo(
+            f"{r.set_id:<{col_id}}  {r.n_primers:>2}  {r.n_in_rt_range:>8}  "
+            f"{r.n_core_below_rt_min:>8}  {status}"
+        )
+        for w in r.warnings:
+            click.echo(f"  {'':>{col_id}}  {w}")
+
+    n_ok = sum(1 for r in results if r.is_rt_optimized)
+    click.echo("")
+    click.echo(f"Summary: {n_ok} of {len(results)} set(s) RT-LAMP optimized.")
+    if target_na is TargetNucleicAcid.RNA and n_ok < len(results):
+        click.secho(
+            "Tip: tighten primer.tm_min to >= "
+            f"{params.rt_min_tm:.1f} in your config and re-run for suboptimal sets.",
+            fg="yellow",
+        )
+
+    if out_csv is not None:
+        write_rt_check_csv(results, out_csv)
+        click.echo(f"Results written to {out_csv}")
+
+
 @cli.command(name="version")
 def version() -> None:
     """Print version and exit."""

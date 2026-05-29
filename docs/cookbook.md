@@ -762,6 +762,227 @@ for estimate in lod_table(params):
 
 ---
 
+## Recipe 10 — Methanogens via *mcrA* (oil & gas souring panel, complete)
+
+**Goal.** Detect methanogens broadly in produced water and pipeline biofilm —
+the second functional guild in the oilfield souring panel described in Recipe 8.
+Methanogens drive reservoir souring through a different pathway than SRB
+(methanogenesis rather than sulfidogenesis) and are an independent corrosion
+and gas-quality concern.
+
+**Why it's interesting.** Methanogens are a deeply polyphyletic archaeal group
+spanning Methanobacteriales, Methanomicrobiales, Methanosarcinales, and
+Methanopyrales.  The universal methanogen marker is the **functional gene
+`mcrA`** (methyl-coenzyme M reductase alpha subunit), which is present in
+all methanogens and absent from non-methanogens (Luton et al. 2002).  Paired
+with an SRB `dsrB` assay (Recipe 6) in a multiplexed panel (Recipe 8), it gives
+a complete picture of the sulfide/methane risk balance in a produced-water
+sample.
+
+**Target.** `mcrA` — pull a taxonomically broad set anchored on the dominant
+oil-reservoir methanogens (*Methanobacterium*, *Methanothermobacter*,
+*Methanococcus*, *Methanosaeta*) and the aceticlastic lineage
+(*Methanosarcina*):
+
+```yaml
+target:
+  name: methanogen_mcrA
+  taxon_id: 2157         # Archaea — anchor; widen with accessions below
+  accessions:
+    # Curate mcrA CDS across genera for oilfield coverage.
+    # Start from NCBI Protein-guided nucleotide pulls for:
+    # Methanobacterium thermoautotrophicum, Methanosarcina mazei,
+    # Methanosaeta concilii, Methanococcus jannaschii, Methanobrevibacter.
+    []
+  gene: mcrA
+  max_sequences: 35       # span all five major orders
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.35   # mcrA is functionally conserved but sequence-diverse
+  min_region_length: 220
+
+primer:
+  tm_min: 60.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0              # Archaea span a wide GC range
+  gc_max: 65.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/methanogen_mcrA
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Off-target panel.** Non-methanogenic archaea and common oilfield bacteria:
+
+| File | Source | Why |
+|---|---|---|
+| `sulfolobus_acidocaldarius.fasta` | NC_007181.1 | Thermoacidophilic crenarchaeon — archaea without mcrA |
+| `archaeoglobus_fulgidus.fasta` | NC_000917.1 | Sulfate-reducing archaeon; shares oilfield niche with methanogens |
+| `desulfovibrio_vulgaris.fasta` | NC_002937.3 | Dominant SRB in oilfields — must not co-flag in mcrA assay |
+| `pseudomonas_aeruginosa.fasta` | NC_002516.2 | Ubiquitous oilfield bacterium |
+| `crude_oil_microbiome_mixed.fasta` | your site metagenome | Real produced-water background |
+
+**Expected output.** `mcrA` is a protein-coding gene under strong catalytic
+constraint; conserved windows map to the alpha-helical ARS/methane-binding
+domain.  Top sets should have 0 flagged hits to *Archaeoglobus* (a sulfate
+reducer, no mcrA) and all bacterial off-targets.
+
+**Completing the souring panel.** Use Recipe 8 to combine this assay with
+the SRB `dsrB` set (Recipe 6) and a universal 16S control:
+
+```bash
+lamp-forge panel \
+  --set SRB=results/srb_dsrB/primer_sets.json \
+  --set MCR=results/methanogen_mcrA/primer_sets.json \
+  --set 16S=results/general_16s/primer_sets.json \
+  --top-per-target 5 \
+  --dimer-dg-threshold -5.0 \
+  --out results/souring_panel
+```
+
+**Field note.** For oilfield deployment, co-quantification of SRB (Recipe 6)
+and methanogens (this recipe) in a single tube provides a risk index:
+high SRB + low methanogens → sulfidogenesis risk; high methanogens → gas quality
+and acetate-corrosion concern.  A portable panel that resolves both guilds in
+under an hour justifies the biocide and pigging decisions made on-site.
+
+---
+
+## Recipe 11 — PRRSV via RT-LAMP (on-farm biosecurity, RNA virus)
+
+**Goal.** Detect porcine reproductive and respiratory syndrome virus (PRRSV)
+from nasal swab, oral fluid, or serum on-farm — fast enough to inform a
+quarantine or movement-restriction decision before animals are transported.
+
+**Why it's interesting.** PRRSV is the most economically significant swine
+pathogen in North America and Europe, costing the US industry alone an estimated
+USD 664 million per year (Holtkamp et al. 2013).  It is an **RNA virus**
+(*Arterivirus*, positive-sense ssRNA), so detection requires **RT-LAMP** — a
+reverse-transcription step before the isothermal amplification.  One-step
+RT-LAMP (Bst 2.0 WarmStart + NEB RTx or WarmStart RTx) runs at **63-65 degC**
+in a single tube, with a positive read-out in 30 minutes, making it ideal for
+the BioVind-style portable platform.
+
+PRRSV exists as two major genotypes: **Type 1** (European, Lelystad lineage)
+and **Type 2** (North American; the dominant genotype in the US and Asia).
+They share ~60% nucleotide identity.  A pan-PRRSV assay must capture both, so
+the primer design needs a diverse, genotype-spanning input set.
+
+**Target.** `ORF7` (nucleocapsid protein N) — the most conserved ORF across
+PRRSV genotypes and the target of most published PRRSV RT-PCR / RT-LAMP assays:
+
+```yaml
+target:
+  name: prrsv_ORF7
+  taxon_id: 28344   # Porcine reproductive and respiratory syndrome virus
+  gene: ORF7        # nucleocapsid protein N; alt annotation: "N protein" / "N"
+  max_sequences: 30 # span Type 1 + Type 2 + high-diversity strains
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.35   # RNA viruses are more variable — loosen slightly
+  min_region_length: 200
+
+primer:
+  tm_min: 63.0              # RT-LAMP optimal: >= 63 degC for one-step RT
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0              # PRRSV is GC-moderate (~50-55%)
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/prrsv_ORF7
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config note.** `primer.tm_min: 63.0` — not the default 60.0.  One-step
+RT-LAMP runs at 63-65 degC; primers with Tm below 63 degC may reduce
+reverse-transcriptase co-activity.  See `lamp-forge rt-check` below.
+
+**Off-target panel.** Porcine viruses that co-circulate and the host background:
+
+| File | Source | Why |
+|---|---|---|
+| `porcine_circovirus_2.fasta` | NC_005148.1 | Ubiquitous swine DNA virus — no RT needed; must not co-flag |
+| `asfv_p72.fasta` | NC_001659.1 region | Large DNA virus; the clinical confounder for respiratory cases is CSF, not ASFV, but include for completeness |
+| `csfv.fasta` | classical swine fever virus *(representative)* | RNA pestivirus; most likely RNA co-detection false positive |
+| `porcine_parvovirus.fasta` | NC_001718.1 | Common swine DNA virus |
+| `sus_scrofa_fragment.fasta` | subset of *Sus scrofa* genome | Host RNA/DNA background from nasal swab |
+
+**Expected output.** ORF7 is ~375 nt, so expect 1-3 conserved windows.
+Top-scoring sets should have zero flagged hits across the panel; PRRSV is
+genetically distant from all listed off-targets.  If you add Type 1 and Type 2
+genotype sequences, a good pan-PRRSV window will appear in the N-terminal
+half of ORF7 (consistent with published primer positions).
+
+**Verify RT-LAMP readiness.** After the run, confirm all primer sets meet the
+one-step RT-LAMP Tm floor before ordering:
+
+```bash
+lamp-forge rt-check \
+  --input results/prrsv_ORF7/primer_sets.json \
+  --na-type rna \
+  --out-csv results/prrsv_ORF7/rt_check.csv
+```
+
+Example output:
+
+```
+RT-LAMP compatibility check -- target: RNA
+Parameters: core primers 63.0-65.0 degC, loop primers >= 60.0 degC
+
+Set ID                      | N | In-range | Core-low | Status
+----------------------------+---+----------+----------+--------
+region_01_set_001           | 6 |        6 |        0 | OK
+region_01_set_002           | 6 |        5 |        1 | NOT OPTIMIZED
+...
+
+Summary: 7 of 10 set(s) RT-LAMP optimized.
+Tip: tighten primer.tm_min to >= 63.0 in your config and re-run for suboptimal sets.
+```
+
+Sets marked **NOT OPTIMIZED** have at least one core primer (F3/B3/FIP/BIP)
+with Tm below 63.0 degC.  Re-run with `primer.tm_min: 63.0` (already set in
+the config above) and `primer.tm_max: 65.0` to push all primers into the
+RT-LAMP-compatible window.
+
+**Wet-lab note.** Oral fluid is the preferred non-invasive sample type for
+PRRSV surveillance in group-housed pigs (rope sampling).  The fluid has
+moderate RT-PCR inhibitors; validate with a spiked oral-fluid extraction
+(e.g. MagMAX 96 Viral RNA kit) and confirm LOD at a clinically relevant
+copy number (typically 10^2 - 10^3 GE/mL of oral fluid).  Use `lamp-forge lod`
+to estimate the achievable LOD given your extraction protocol before ordering.
+
+---
+
 ## Appendix — choosing your parameters for a new target
 
 When you start from a target not covered above, set parameters in this order:
