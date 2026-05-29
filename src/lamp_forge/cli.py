@@ -278,6 +278,113 @@ def panel(
         click.echo(f"Open the panel report: {html_path}")
 
 
+@cli.command()
+@click.option(
+    "--sample-volume",
+    "sample_volume_ul",
+    type=float,
+    required=True,
+    help="Sample volume input to extraction (uL).",
+)
+@click.option(
+    "--efficiency",
+    "extraction_efficiency",
+    type=float,
+    default=0.50,
+    show_default=True,
+    help="Extraction efficiency as a fraction 0-1 (e.g. 0.50 for 50%).",
+)
+@click.option(
+    "--eluate-volume",
+    "eluate_volume_ul",
+    type=float,
+    required=True,
+    help="Volume of extraction eluate (uL).",
+)
+@click.option(
+    "--reaction-input",
+    "reaction_input_ul",
+    type=float,
+    required=True,
+    help="Eluate added to each LAMP reaction (uL).",
+)
+@click.option(
+    "--probability",
+    "probabilities",
+    type=float,
+    multiple=True,
+    default=(0.90, 0.95, 0.99, 0.999),
+    show_default=True,
+    help="Detection probability threshold (repeat for multiple, e.g. --probability 0.95 --probability 0.99).",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the LOD table to a CSV file.",
+)
+def lod(
+    sample_volume_ul: float,
+    extraction_efficiency: float,
+    eluate_volume_ul: float,
+    reaction_input_ul: float,
+    probabilities: tuple[float, ...],
+    out_csv: Path | None,
+) -> None:
+    r"""Estimate LAMP assay limit of detection (LOD) across the extraction chain.
+
+    Computes the LOD in copies/reaction and back-calculates to copies/mL in
+    the original sample using Poisson single-molecule statistics.
+
+    Example (200 uL blood, 50% extraction into 50 uL eluate, 5 uL to reaction):
+
+    \b
+        lamp-forge lod --sample-volume 200 --eluate-volume 50 --reaction-input 5
+    """
+    from lamp_forge.lod import ExtractionParams, lod_table, write_lod_csv
+
+    try:
+        params = ExtractionParams(
+            sample_volume_ul=sample_volume_ul,
+            extraction_efficiency=extraction_efficiency,
+            eluate_volume_ul=eluate_volume_ul,
+            reaction_input_ul=reaction_input_ul,
+        )
+    except ValueError as exc:
+        click.secho(f"Parameter error: {exc}", fg="red", err=True)
+        import sys
+
+        sys.exit(2)
+
+    estimates = lod_table(params, tuple(probabilities))
+
+    click.echo(
+        f"Extraction chain: {sample_volume_ul:.0f} uL sample, "
+        f"{extraction_efficiency*100:.0f}% efficiency, "
+        f"{eluate_volume_ul:.0f} uL eluate, "
+        f"{reaction_input_ul:.1f} uL to reaction"
+    )
+    click.echo(
+        f"Effective sample volume per reaction: "
+        f"{params.copies_per_rxn_per_copy_per_ul:.2f} uL"
+    )
+    click.echo("")
+    header = f"{'P(detect)':>12}  {'lambda (copies/rxn)':>20}  {'LOD (copies/mL)':>18}"
+    click.echo(header)
+    click.echo("-" * len(header))
+    for e in estimates:
+        click.echo(
+            f"{e.detection_probability:>12.3f}  "
+            f"{e.lod_copies_per_reaction:>20.3f}  "
+            f"{e.lod_copies_per_ml:>18.1f}"
+        )
+
+    if out_csv is not None:
+        write_lod_csv(estimates, out_csv)
+        click.echo(f"\nLOD table written to {out_csv}")
+
+
 @cli.command(name="version")
 def version() -> None:
     """Print version and exit."""

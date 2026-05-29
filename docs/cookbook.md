@@ -652,6 +652,116 @@ small (3–5) for large panels.
 
 ---
 
+## Recipe 9 — Estimating assay LOD before ordering primers (`lamp-forge lod`)
+
+**Goal.** Before committing to ordering and validating a primer set, estimate
+the analytical limit of detection (LOD) the assay can achieve given your
+specific sample type and DNA/RNA extraction protocol.
+
+**Why it matters for field deployment.** BioVind-style portable platforms
+process small sample volumes and use rapid extraction kits optimised for speed
+over yield — the effective sample volume reaching the reaction is a small
+fraction of what was collected. LOD_95 (the copy number at which 95% of
+reactions are positive) is the standard regulatory benchmark for a *detection*
+assay. Knowing your LOD before ordering lets you decide:
+
+- Is 300 copies/mL sufficient sensitivity for the clinical or industrial
+  threshold? (TB in sputum: ~100–1000 GE/mL; souring SRB in produced water:
+  often >10³ cells/mL.)
+- Would increasing sample input volume or improving extraction efficiency push
+  the LOD below the required threshold without needing a more sensitive assay?
+
+**Model.** The `lod` command uses the **Poisson single-molecule** model:
+
+```
+P(detect | mean copies = λ) = 1 - exp(-λ)
+LOD_95: λ = -ln(0.05) ≈ 2.996 copies / reaction
+```
+
+Back-calculation to the original sample:
+
+```
+LOD [copies/mL] = λ_LOD / (V_sample × η × V_rxn_input / V_eluate) × 1000
+```
+
+**Usage.** The `lamp-forge lod` command takes extraction-chain parameters and
+prints an LOD table. All volumes are in microlitres (uL).
+
+```bash
+# Produced-water SRB screen (Recipe 6):
+# 1 mL produced water, 40% bead-extraction efficiency,
+# eluted in 100 uL buffer, 5 uL added to 25 uL LAMP reaction.
+lamp-forge lod \
+  --sample-volume 1000 \
+  --efficiency 0.40 \
+  --eluate-volume 100 \
+  --reaction-input 5 \
+  --out-csv results/srb_lod.csv
+```
+
+Expected output:
+
+```
+Extraction chain: 1000 uL sample, 40% efficiency, 100 uL eluate, 5.0 uL to reaction
+Effective sample volume per reaction: 20.00 uL
+
+   P(detect)   lambda (copies/rxn)   LOD (copies/mL)
+-----------------------------------------------------------
+       0.900               2.303                115.1
+       0.950               2.996                149.8
+       0.990               4.605                230.3
+       0.999               6.908                345.4
+```
+
+A 150 copies/mL LOD_95 is comfortably below the SRB threshold of concern for
+oilfield souring (~10³ cells/mL) — the assay design is sufficient.
+
+**Improving LOD without changing the primer set.** The same command lets you
+model protocol changes:
+
+| Change | Effect |
+|---|---|
+| Double sample volume (1 mL → 2 mL) | halves LOD in copies/mL |
+| Improve extraction efficiency (40% → 70%) | LOD × 0.57 |
+| Add more eluate to reaction (5 uL → 10 uL) | halves LOD, but check inhibitors |
+| Concentrate eluate (100 uL → 50 uL) | halves LOD |
+
+**Clinical point-of-care example (respiratory LAMP panel).**
+Nasal swab in 400 uL VTM, 50% RNA extraction, 50 uL eluate, 5 uL to reaction:
+
+```bash
+lamp-forge lod \
+  --sample-volume 400 \
+  --efficiency 0.50 \
+  --eluate-volume 50 \
+  --reaction-input 5
+```
+
+Effective sample = 400 × 0.5 × (5/50) = 20 uL per reaction → LOD_95 ≈ 150
+copies/mL of VTM, equivalent to ~60 copies/swab — within the range of
+published colorimetric LAMP clinical performance for SARS-CoV-2.
+
+**Script usage.** The underlying model is importable for use in a notebook or
+downstream tooling:
+
+```python
+from lamp_forge.lod import ExtractionParams, lod_table
+
+params = ExtractionParams(
+    sample_volume_ul=1000.0,
+    extraction_efficiency=0.40,
+    eluate_volume_ul=100.0,
+    reaction_input_ul=5.0,
+)
+for estimate in lod_table(params):
+    print(
+        f"LOD_{estimate.detection_probability*100:.0f}: "
+        f"{estimate.lod_genome_eq_per_ml:.1f} GE/mL"
+    )
+```
+
+---
+
 ## Appendix — choosing your parameters for a new target
 
 When you start from a target not covered above, set parameters in this order:
