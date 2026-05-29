@@ -385,6 +385,134 @@ def lod(
         click.echo(f"\nLOD table written to {out_csv}")
 
 
+@cli.command(name="export")
+@click.option(
+    "--input",
+    "input_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="primer_sets.json produced by 'lamp-forge run'.",
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["idt", "twist"], case_sensitive=False),
+    default="idt",
+    show_default=True,
+    help="Vendor order-sheet format.",
+)
+@click.option(
+    "--out",
+    "out_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output CSV path. Defaults to <input_stem>_<format>_order.csv.",
+)
+@click.option(
+    "--top-n",
+    default=1,
+    type=int,
+    show_default=True,
+    help="Number of top-ranked primer sets to export (1 = best set only).",
+)
+@click.option(
+    "--target-label",
+    default=None,
+    help=(
+        "Short target label prepended to primer names (e.g. 'dsrB_SRB'). "
+        "Makes order-sheet rows self-documenting when sharing with a vendor or lab."
+    ),
+)
+@click.option(
+    "--scale",
+    default=None,
+    help=(
+        "Override synthesis scale for all primers "
+        "(e.g. '25nm', '100nm', '250nm'). "
+        "Default: role-specific (25nm for F3/B3/LF/LB, 100nm for FIP/BIP)."
+    ),
+)
+@click.option(
+    "--purification",
+    default=None,
+    help=(
+        "Override purification for all primers "
+        "(e.g. 'STD', 'HPLC', 'PAGE'). "
+        "Default: role-specific (STD for outer/loop primers, HPLC for FIP/BIP)."
+    ),
+)
+def export(
+    input_path: Path,
+    fmt: str,
+    out_path: Path | None,
+    top_n: int,
+    target_label: str | None,
+    scale: str | None,
+    purification: str | None,
+) -> None:
+    r"""Export designed primers to an IDT or Twist vendor order CSV.
+
+    Reads the primer_sets.json produced by 'lamp-forge run' and writes a
+    spreadsheet ready for direct upload to the IDT SDS or Twist oligo-order
+    portal.
+
+    Scale and purification default to role-specific values:
+    FIP/BIP get 100nm/HPLC (chimeric oligos benefit from full HPLC
+    purification); F3/B3/LF/LB get 25nm/STD.
+
+    \b
+    Example (best set in IDT format):
+        lamp-forge export \\
+          --input results/primer_sets.json \\
+          --format idt \\
+          --target-label dsrB_SRB \\
+          --out orders/dsrB_SRB_idt.csv
+
+    \b
+    Example (top 3 sets in Twist format):
+        lamp-forge export \\
+          --input results/primer_sets.json \\
+          --format twist \\
+          --top-n 3 \\
+          --out orders/asfv_twist.csv
+    """
+    import json
+
+    from lamp_forge.vendor_export import VendorFormat, rows_from_json_data, write_vendor_csv
+
+    with input_path.open(encoding="utf-8") as fh:
+        data: dict[str, object] = json.load(fh)
+
+    sets_data = data.get("primer_sets", [])
+    if not isinstance(sets_data, list) or not sets_data:
+        click.secho("No primer sets found in the input file.", fg="red", err=True)
+        sys.exit(1)
+
+    vendor_fmt = VendorFormat(fmt.lower())
+    if out_path is None:
+        out_path = input_path.parent / f"{input_path.stem}_{fmt.lower()}_order.csv"
+
+    rows = rows_from_json_data(
+        sets_data,
+        target_label=target_label,
+        top_n=top_n,
+        scale_override=scale,
+        purification_override=purification,
+    )
+    if not rows:
+        click.secho("No primers extracted — check the input file.", fg="red", err=True)
+        sys.exit(1)
+
+    write_vendor_csv(rows, out_path, vendor_fmt)
+
+    n_sets = min(top_n, len(sets_data))
+    click.secho(
+        f"Wrote {len(rows)} primers ({n_sets} set(s)) -> {out_path}",
+        fg="green",
+    )
+    click.echo(f"Format: {vendor_fmt.value.upper()} bulk order")
+
+
 @cli.command(name="version")
 def version() -> None:
     """Print version and exit."""
