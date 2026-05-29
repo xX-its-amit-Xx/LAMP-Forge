@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid md:grid-cols-2 gap-8 items-center mb-12">
+  <div>
+    <h1 class="text-4xl font-bold text-forge-800 mb-3">LAMP primers, designed reproducibly.</h1>
+    <p class="text-lg text-slate-700 mb-5">
+      Submit a target organism and an off-target panel. Get back a ranked, ready-to-order
+      set of LAMP primer sets with conservation plots, specificity heatmaps, and full
+      thermodynamic vetting.
+    </p>
+    <div class="flex gap-3">
+      <a href="/jobs/new" class="bg-forge-600 hover:bg-forge-700 text-white px-5 py-2.5 rounded font-medium">
+        Start a new job
+      </a>
+      <a href="/jobs" class="border border-slate-300 hover:border-slate-400 px-5 py-2.5 rounded font-medium">
+        View recent jobs
+      </a>
+    </div>
+  </div>
+  <div class="bg-white rounded-xl shadow border border-slate-200 p-5">
+    <div class="text-xs uppercase tracking-wider text-forge-700 font-semibold mb-2">Pipeline</div>
+    <ol class="space-y-2 text-sm">
+      <li class="flex"><span class="w-6 text-forge-600 font-bold">1</span>Fetch sequences from NCBI Entrez</li>
+      <li class="flex"><span class="w-6 text-forge-600 font-bold">2</span>Align with MAFFT</li>
+      <li class="flex"><span class="w-6 text-forge-600 font-bold">3</span>Per-position Shannon-entropy conservation</li>
+      <li class="flex"><span class="w-6 text-forge-600 font-bold">4</span>Generate F3/B3/FIP/BIP/LF/LB sets (primer3-py)</li>
+      <li class="flex"><span class="w-6 text-forge-600 font-bold">5</span>BLAST off-target screen against your panel</li>
+      <li class="flex"><span class="w-6 text-forge-600 font-bold">6</span>HTML + JSON + order-ready CSV report</li>
+    </ol>
+  </div>
+</section>
+
+<section class="bg-white rounded-xl shadow border border-slate-200 p-6 mb-8">
+  <h2 class="text-2xl font-bold text-forge-800 mb-3">Why this exists</h2>
+  <p class="text-slate-700 mb-3">
+    Loop-mediated Isothermal Amplification (LAMP, Notomi 2000) is the workhorse of
+    point-of-care molecular diagnostics — it runs at a single temperature, reads out
+    by eye, and works in field conditions PCR can't reach. But it needs <strong>six
+    primers binding to eight regions</strong>, each thermodynamically clean and
+    specific. Designing that set by hand is tedious; the few commercial tools that
+    exist are closed-source and opaque.
+  </p>
+  <p class="text-slate-700">
+    LAMP-Forge gives you the whole pipeline in one open container, with every
+    design decision documented in the source. Built so a wet-lab scientist with
+    intermediate Python can audit the trade-offs.
+  </p>
+</section>
+
+<section class="grid md:grid-cols-3 gap-4">
+  <a href="https://github.com/lamp-forge/lamp-forge/blob/main/docs/workflow.md"
+     class="block bg-white rounded-lg shadow border border-slate-200 p-5 hover:border-forge-600">
+    <div class="font-semibold text-forge-800 mb-1">Workflow guide</div>
+    <div class="text-sm text-slate-600">The science behind each step + tradeoffs.</div>
+  </a>
+  <a href="https://github.com/lamp-forge/lamp-forge/blob/main/docs/lamp_primer_design.md"
+     class="block bg-white rounded-lg shadow border border-slate-200 p-5 hover:border-forge-600">
+    <div class="font-semibold text-forge-800 mb-1">LAMP primer geometry</div>
+    <div class="text-sm text-slate-600">F3/B3/FIP/BIP/LF/LB reference, citing Notomi 2000.</div>
+  </a>
+  <a href="https://github.com/lamp-forge/lamp-forge/blob/main/docs/cookbook.md"
+     class="block bg-white rounded-lg shadow border border-slate-200 p-5 hover:border-forge-600">
+    <div class="font-semibold text-forge-800 mb-1">Cookbook</div>
+    <div class="text-sm text-slate-600">Recipes for MTB, SARS-CoV-2, Salmonella, P. falciparum, KPC.</div>
+  </a>
+</section>
+{% endblock %}

@@ -1,0 +1,34 @@
+{
+  "target": {
+    "name": "mtb_rpoB",
+    "taxon_id": 1773,
+    "gene": "rpoB",
+    "max_sequences": 20,
+    "email": "you@your-inst.edu"
+  },
+  "off_targets": {
+    "min_identity_threshold": 0.80,
+    "min_coverage_threshold": 0.80,
+    "fasta_files": []
+  },
+  "conservation": {
+    "window_size": 30,
+    "entropy_threshold": 0.25,
+    "min_region_length": 250
+  },
+  "primer": {
+    "tm_min": 60.0,
+    "tm_max": 65.0,
+    "tm_match_tolerance": 2.0,
+    "gc_min": 40.0,
+    "gc_max": 65.0,
+    "hairpin_dg_threshold": -2.0,
+    "dimer_dg_threshold": -5.0,
+    "amplicon_size": { "f2_b2_min": 120, "f2_b2_max": 160 }
+  },
+  "output": {
+    "top_n": 10,
+    "generate_html": true,
+    "generate_csv": true
+  }
+}

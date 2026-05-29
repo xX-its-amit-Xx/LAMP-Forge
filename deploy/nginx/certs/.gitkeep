@@ -1,0 +1,2 @@
+# Drop fullchain.pem + privkey.pem here for TLS termination.
+# This directory is mounted read-only into the nginx container.

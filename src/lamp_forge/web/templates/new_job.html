@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-3xl font-bold text-forge-800 mb-2">New job</h1>
+<p class="text-slate-600 mb-6">
+  Submit a primer-design job. All fields validated server-side; defaults are tuned
+  for typical bacterial marker-gene assays. See the
+  <a class="text-forge-600 underline" href="https://github.com/lamp-forge/lamp-forge/blob/main/docs/cookbook.md">cookbook</a>
+  for ready-to-paste configs for specific organisms.
+</p>
+
+<form id="job-form" class="space-y-6" autocomplete="off">
+
+  <div class="bg-white rounded-xl shadow border border-slate-200 p-5">
+    <h2 class="font-semibold text-forge-800 mb-3">Authentication</h2>
+    <label class="block text-sm font-medium text-slate-700 mb-1">API key
+      <span class="text-slate-400 font-normal">(optional in dev; required in prod)</span>
+    </label>
+    <input id="api-key" type="password" placeholder="lf_..." autocomplete="off"
+           class="w-full border border-slate-300 rounded px-3 py-2 font-mono text-sm">
+  </div>
+
+  <fieldset class="bg-white rounded-xl shadow border border-slate-200 p-5">
+    <legend class="font-semibold text-forge-800 px-2">Target</legend>
+    <div class="grid md:grid-cols-2 gap-4">
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Target name</span>
+        <input name="target_name" required class="mt-1 w-full border border-slate-300 rounded px-3 py-2"
+               placeholder="mtb_rpoB">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">NCBI taxon ID</span>
+        <input name="taxon_id" type="number" min="1" class="mt-1 w-full border border-slate-300 rounded px-3 py-2"
+               placeholder="1773 = M. tuberculosis">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Gene filter (optional)</span>
+        <input name="gene" class="mt-1 w-full border border-slate-300 rounded px-3 py-2"
+               placeholder="rpoB">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Max sequences</span>
+        <input name="max_sequences" type="number" min="1" max="200" value="20"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm md:col-span-2">
+        <span class="block font-medium text-slate-700">NCBI courtesy email</span>
+        <input name="email" type="email" required
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2"
+               placeholder="you@your-inst.edu">
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="bg-white rounded-xl shadow border border-slate-200 p-5">
+    <legend class="font-semibold text-forge-800 px-2">Off-targets</legend>
+    <p class="text-xs text-slate-600 mb-3">
+      Upload one FASTA per genome you want to screen against. Files are kept against
+      your API key for re-use in later jobs.
+    </p>
+    <input id="off-target-files" type="file" multiple accept=".fa,.fasta,.fna,.ffn"
+           class="block w-full text-sm">
+    <div id="upload-status" class="mt-2 text-xs text-slate-600"></div>
+    <input type="hidden" name="upload_ids" id="upload-ids">
+
+    <div class="grid md:grid-cols-2 gap-4 mt-4">
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Min identity threshold</span>
+        <input name="min_identity_threshold" type="number" step="0.01" min="0" max="1" value="0.80"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Min coverage threshold</span>
+        <input name="min_coverage_threshold" type="number" step="0.01" min="0" max="1" value="0.80"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="bg-white rounded-xl shadow border border-slate-200 p-5">
+    <legend class="font-semibold text-forge-800 px-2">Conservation</legend>
+    <div class="grid md:grid-cols-3 gap-4">
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Window size (nt)</span>
+        <input name="window_size" type="number" min="10" max="100" value="30"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Entropy threshold (bits)</span>
+        <input name="entropy_threshold" type="number" step="0.01" min="0" max="2" value="0.25"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Min region length (bp)</span>
+        <input name="min_region_length" type="number" min="120" max="2000" value="250"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="bg-white rounded-xl shadow border border-slate-200 p-5">
+    <legend class="font-semibold text-forge-800 px-2">Primer constraints</legend>
+    <div class="grid md:grid-cols-3 gap-4">
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Tm min (°C)</span>
+        <input name="tm_min" type="number" step="0.1" value="60"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Tm max (°C)</span>
+        <input name="tm_max" type="number" step="0.1" value="65"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Tm match tolerance (°C)</span>
+        <input name="tm_match_tolerance" type="number" step="0.1" value="2"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">GC min (%)</span>
+        <input name="gc_min" type="number" step="0.1" value="40"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">GC max (%)</span>
+        <input name="gc_max" type="number" step="0.1" value="65"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Hairpin ΔG (kcal/mol)</span>
+        <input name="hairpin_dg_threshold" type="number" step="0.1" value="-2"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">Dimer ΔG (kcal/mol)</span>
+        <input name="dimer_dg_threshold" type="number" step="0.1" value="-5"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">F2-B2 min (bp)</span>
+        <input name="f2_b2_min" type="number" value="120"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+      <label class="block text-sm">
+        <span class="block font-medium text-slate-700">F2-B2 max (bp)</span>
+        <input name="f2_b2_max" type="number" value="160"
+               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="bg-white rounded-xl shadow border border-slate-200 p-5">
+    <legend class="font-semibold text-forge-800 px-2">Output</legend>
+    <label class="block text-sm">
+      <span class="block font-medium text-slate-700">Top N to highlight</span>
+      <input name="top_n" type="number" min="1" max="100" value="10"
+             class="mt-1 w-32 border border-slate-300 rounded px-3 py-2">
+    </label>
+  </fieldset>
+
+  <div id="submit-status" class="text-sm text-red-600"></div>
+
+  <div class="flex gap-3">
+    <button type="submit"
+            class="bg-forge-600 hover:bg-forge-700 text-white px-5 py-2.5 rounded font-medium">
+      Submit job
+    </button>
+    <a href="/jobs" class="border border-slate-300 hover:border-slate-400 px-5 py-2.5 rounded font-medium">
+      Cancel
+    </a>
+  </div>
+</form>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const apiKeyInput = document.getElementById('api-key');
+const filesInput = document.getElementById('off-target-files');
+const uploadStatus = document.getElementById('upload-status');
+const uploadIdsInput = document.getElementById('upload-ids');
+const submitStatus = document.getElementById('submit-status');
+
+function authHeader() {
+  const k = apiKeyInput.value.trim();
+  return k ? { 'Authorization': 'Bearer ' + k } : {};
+}
+
+filesInput.addEventListener('change', async () => {
+  uploadStatus.textContent = '';
+  const ids = [];
+  for (const f of filesInput.files) {
+    const fd = new FormData();
+    fd.append('file', f);
+    uploadStatus.textContent = 'Uploading ' + f.name + '…';
+    const res = await fetch('/api/v1/uploads', {
+      method: 'POST', body: fd, headers: authHeader()
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      uploadStatus.innerHTML = '<span class="text-red-600">Upload failed: ' + err + '</span>';
+      return;
+    }
+    const data = await res.json();
+    ids.push(data.upload_id);
+  }
+  uploadIdsInput.value = JSON.stringify(ids);
+  uploadStatus.textContent = ids.length + ' file(s) uploaded.';
+});
+
+document.getElementById('job-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  submitStatus.textContent = '';
+  const fd = new FormData(e.target);
+  const get = (k) => fd.get(k);
+  const num = (k) => Number(fd.get(k));
+
+  const fasta_files = uploadIdsInput.value ? JSON.parse(uploadIdsInput.value) : [];
+  const body = {
+    target: {
+      name: get('target_name'),
+      taxon_id: get('taxon_id') ? num('taxon_id') : null,
+      gene: get('gene') || null,
+      max_sequences: num('max_sequences'),
+      email: get('email'),
+    },
+    off_targets: {
+      min_identity_threshold: num('min_identity_threshold'),
+      min_coverage_threshold: num('min_coverage_threshold'),
+      fasta_files,
+    },
+    conservation: {
+      window_size: num('window_size'),
+      entropy_threshold: num('entropy_threshold'),
+      min_region_length: num('min_region_length'),
+    },
+    primer: {
+      tm_min: num('tm_min'),
+      tm_max: num('tm_max'),
+      tm_match_tolerance: num('tm_match_tolerance'),
+      gc_min: num('gc_min'),
+      gc_max: num('gc_max'),
+      hairpin_dg_threshold: num('hairpin_dg_threshold'),
+      dimer_dg_threshold: num('dimer_dg_threshold'),
+      amplicon_size: { f2_b2_min: num('f2_b2_min'), f2_b2_max: num('f2_b2_max') },
+    },
+    output: { top_n: num('top_n'), generate_html: true, generate_csv: true },
+  };
+
+  const res = await fetch('/api/v1/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    submitStatus.textContent = 'Submission failed: ' + (err.detail || res.statusText);
+    return;
+  }
+  const data = await res.json();
+  window.location.href = '/jobs/' + data.id;
+});
+</script>
+{% endblock %}

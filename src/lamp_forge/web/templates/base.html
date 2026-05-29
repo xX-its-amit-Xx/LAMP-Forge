@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or "LAMP-Forge" }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            forge: { 50: '#f0f9ff', 600: '#0369a1', 700: '#075985', 800: '#0c4a6e' }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%AC%3C/text%3E%3C/svg%3E">
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans">
+  <nav class="bg-forge-800 text-white">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/" class="text-xl font-bold tracking-tight">LAMP-Forge</a>
+      <div class="flex items-center gap-5 text-sm">
+        <a href="/jobs/new" class="hover:underline">New job</a>
+        <a href="/jobs" class="hover:underline">Jobs</a>
+        <a href="/api/docs" class="hover:underline">API docs</a>
+        <a href="https://github.com/lamp-forge/lamp-forge" target="_blank" rel="noopener" class="hover:underline">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="max-w-6xl mx-auto px-4 py-6 mt-8 text-xs text-slate-500 border-t border-slate-200">
+    LAMP-Forge v{{ settings.version }} · {{ settings.env }} ·
+    <a class="hover:underline" href="/api/docs">OpenAPI</a> ·
+    <a class="hover:underline" href="https://github.com/lamp-forge/lamp-forge#readme">Docs</a>
+    · In silico ≠ wet-lab validated; see README for caveats.
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

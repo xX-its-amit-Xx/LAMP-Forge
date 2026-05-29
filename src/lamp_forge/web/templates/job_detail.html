@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between mb-2">
+  <h1 class="text-2xl font-bold text-forge-800">Job {{ job.id[:8] }}</h1>
+  <div class="flex gap-2 text-sm">
+    <a href="/jobs" class="border border-slate-300 hover:border-slate-400 px-3 py-1.5 rounded">All jobs</a>
+    <a href="/api/v1/jobs/{{ job.id }}" class="border border-slate-300 hover:border-slate-400 px-3 py-1.5 rounded">JSON</a>
+  </div>
+</div>
+<p class="text-slate-600 mb-6">
+  <span class="font-medium">{{ job.target_name }}</span> ·
+  submitted {{ job.created_at.strftime('%Y-%m-%d %H:%M UTC') }}
+</p>
+
+<div class="grid md:grid-cols-3 gap-4 mb-6">
+  <div class="bg-white rounded-xl shadow border border-slate-200 p-4">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Status</div>
+    <div id="job-status" class="text-lg font-semibold">{{ job.status }}</div>
+  </div>
+  <div class="bg-white rounded-xl shadow border border-slate-200 p-4">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Conserved regions</div>
+    <div class="text-lg font-semibold">{{ job.n_conserved_regions if job.n_conserved_regions is not none else '—' }}</div>
+  </div>
+  <div class="bg-white rounded-xl shadow border border-slate-200 p-4">
+    <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Primer sets</div>
+    <div class="text-lg font-semibold">{{ job.n_primer_sets if job.n_primer_sets is not none else '—' }}</div>
+  </div>
+</div>
+
+<div class="bg-white rounded-xl shadow border border-slate-200 p-5 mb-6">
+  <h2 class="font-semibold text-forge-800 mb-3">Progress</h2>
+  <div id="progress-container"
+       hx-get="/jobs/{{ job.id }}/progress"
+       hx-trigger="load, every 2s"
+       hx-swap="innerHTML">
+    {% include "_progress_fragment.html" %}
+  </div>
+</div>
+
+{% if job.status == 'succeeded' %}
+<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-5 mb-6">
+  <h2 class="font-semibold text-emerald-800 mb-3">Results</h2>
+  <div class="flex flex-wrap gap-2 text-sm">
+    <a class="bg-white border border-emerald-300 hover:bg-emerald-100 px-3 py-2 rounded"
+       href="/api/v1/jobs/{{ job.id }}/results/lamp_forge_report.html" target="_blank">
+       View HTML report ↗
+    </a>
+    <a class="bg-white border border-emerald-300 hover:bg-emerald-100 px-3 py-2 rounded"
+       href="/api/v1/jobs/{{ job.id }}/results/primer_sets.csv">Download CSV</a>
+    <a class="bg-white border border-emerald-300 hover:bg-emerald-100 px-3 py-2 rounded"
+       href="/api/v1/jobs/{{ job.id }}/results/primer_sets.json">Download JSON</a>
+    <a class="bg-white border border-emerald-300 hover:bg-emerald-100 px-3 py-2 rounded"
+       href="/api/v1/jobs/{{ job.id }}/results/conservation.tsv">Conservation TSV</a>
+    <a class="bg-white border border-emerald-300 hover:bg-emerald-100 px-3 py-2 rounded"
+       href="/api/v1/jobs/{{ job.id }}/results/specificity.tsv">Specificity TSV</a>
+    <a class="bg-white border border-emerald-300 hover:bg-emerald-100 px-3 py-2 rounded"
+       href="/api/v1/jobs/{{ job.id }}/results/run_manifest.json">Manifest</a>
+  </div>
+</div>
+{% elif job.status == 'failed' %}
+<div class="bg-red-50 border border-red-200 rounded-xl p-5 mb-6">
+  <h2 class="font-semibold text-red-800 mb-2">Failed</h2>
+  <pre class="text-sm text-red-700 whitespace-pre-wrap">{{ job.error }}</pre>
+</div>
+{% elif job.status in ('pending', 'running') %}
+<div class="text-right mb-6">
+  <button hx-post="/api/v1/jobs/{{ job.id }}/cancel"
+          hx-swap="none"
+          hx-on="htmx:afterRequest: location.reload()"
+          class="border border-slate-300 hover:border-red-400 hover:text-red-600 px-3 py-1.5 rounded text-sm">
+    Cancel job
+  </button>
+</div>
+{% endif %}
+
+<details class="bg-white rounded-xl shadow border border-slate-200 p-5">
+  <summary class="cursor-pointer font-semibold text-forge-800">Config snapshot</summary>
+  <pre class="mt-3 text-xs bg-slate-50 p-3 rounded overflow-x-auto">{{ job.config | tojson(indent=2) }}</pre>
+</details>
+{% endblock %}

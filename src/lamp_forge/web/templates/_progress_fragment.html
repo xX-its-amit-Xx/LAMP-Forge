@@ -1,0 +1,36 @@
+{% set is_terminal = job.status in ('succeeded', 'failed', 'cancelled') %}
+{% if is_terminal %}
+  <div hx-swap-oob="true" id="job-status" class="text-lg font-semibold">{{ job.status }}</div>
+  {# Stop polling by overwriting hx-trigger on the container. #}
+  <span hx-swap-oob="true" id="progress-container" data-status="{{ job.status }}"></span>
+{% endif %}
+
+{% if not job.progress %}
+  <p class="text-sm text-slate-500">Waiting for the worker to pick up this job…</p>
+{% else %}
+  <ol class="space-y-2">
+    {% for ev in job.progress %}
+    <li class="flex items-start gap-3 text-sm">
+      <span class="w-20 shrink-0 text-xs font-mono text-slate-500">
+        {{ ev.ts[11:19] if ev.ts is string else ev.ts.strftime('%H:%M:%S') }}
+      </span>
+      <span class="px-2 py-0.5 rounded text-xs font-semibold
+                   {% if ev.stage == 'error' %}bg-red-100 text-red-800
+                   {% elif ev.stage == 'complete' %}bg-emerald-100 text-emerald-800
+                   {% else %}bg-forge-50 text-forge-700{% endif %}">
+        {{ ev.stage }}
+      </span>
+      <span class="text-slate-700">{{ ev.message }}</span>
+      {% if ev.percent is not none %}
+        <span class="ml-auto text-xs text-slate-500">{{ ev.percent | int }}%</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% if job.progress and job.progress[-1].percent is not none %}
+  <div class="w-full bg-slate-100 rounded-full h-2 mt-4">
+    <div class="bg-forge-600 h-2 rounded-full transition-all"
+         style="width: {{ job.progress[-1].percent | int }}%"></div>
+  </div>
+  {% endif %}
+{% endif %}

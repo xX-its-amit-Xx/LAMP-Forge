@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-3xl font-bold text-forge-800">Jobs</h1>
+  <a href="/jobs/new" class="bg-forge-600 hover:bg-forge-700 text-white px-4 py-2 rounded font-medium">
+    + New job
+  </a>
+</div>
+
+{% if not jobs %}
+<div class="bg-white rounded-xl shadow border border-slate-200 p-8 text-center text-slate-500">
+  No jobs yet. <a href="/jobs/new" class="text-forge-600 underline">Submit one →</a>
+</div>
+{% else %}
+<div class="bg-white rounded-xl shadow border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-100 text-slate-700">
+      <tr>
+        <th class="text-left px-4 py-2">Job</th>
+        <th class="text-left px-4 py-2">Target</th>
+        <th class="text-left px-4 py-2">Status</th>
+        <th class="text-right px-4 py-2">Regions</th>
+        <th class="text-right px-4 py-2">Sets</th>
+        <th class="text-left px-4 py-2">Submitted</th>
+        <th class="text-left px-4 py-2"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="px-4 py-2 font-mono text-xs">
+          <a class="text-forge-700 hover:underline" href="/jobs/{{ j.id }}">{{ j.id[:8] }}</a>
+        </td>
+        <td class="px-4 py-2">{{ j.target_name }}</td>
+        <td class="px-4 py-2">
+          {% set color = {
+            'pending':   'bg-slate-100 text-slate-700',
+            'running':   'bg-amber-100 text-amber-800',
+            'succeeded': 'bg-emerald-100 text-emerald-800',
+            'failed':    'bg-red-100 text-red-800',
+            'cancelled': 'bg-slate-200 text-slate-700',
+          }.get(j.status, 'bg-slate-100 text-slate-700') %}
+          <span class="inline-block px-2 py-0.5 rounded text-xs font-medium {{ color }}">{{ j.status }}</span>
+        </td>
+        <td class="px-4 py-2 text-right">{{ j.n_conserved_regions if j.n_conserved_regions is not none else '—' }}</td>
+        <td class="px-4 py-2 text-right">{{ j.n_primer_sets if j.n_primer_sets is not none else '—' }}</td>
+        <td class="px-4 py-2 text-slate-500">{{ j.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="px-4 py-2"><a href="/jobs/{{ j.id }}" class="text-forge-600 hover:underline">Details →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

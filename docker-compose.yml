@@ -1,0 +1,150 @@
+name: lamp-forge
+
+x-env-common: &env_common
+  LAMP_FORGE_ENV: ${LAMP_FORGE_ENV:-development}
+  LAMP_FORGE_BASE_URL: ${LAMP_FORGE_BASE_URL:-http://localhost:8000}
+  LAMP_FORGE_REDIS_URL: redis://redis:6379/0
+  LAMP_FORGE_DATA_DIR: /work/data
+  LAMP_FORGE_API_KEYS: ${LAMP_FORGE_API_KEYS:-}
+  LAMP_FORGE_ADMIN_API_KEYS: ${LAMP_FORGE_ADMIN_API_KEYS:-}
+  LAMP_FORGE_LOG_LEVEL: ${LAMP_FORGE_LOG_LEVEL:-INFO}
+  LAMP_FORGE_LOG_JSON: ${LAMP_FORGE_LOG_JSON:-true}
+  LAMP_FORGE_CORS_ORIGINS: ${LAMP_FORGE_CORS_ORIGINS:-http://localhost:8000}
+  LAMP_FORGE_NCBI_EMAIL: ${NCBI_EMAIL:-anonymous@example.com}
+  LAMP_FORGE_NCBI_API_KEY: ${NCBI_API_KEY:-}
+  # Legacy CLI envs (still respected by core modules)
+  NCBI_EMAIL: ${NCBI_EMAIL:-anonymous@example.com}
+  NCBI_API_KEY: ${NCBI_API_KEY:-}
+
+x-volumes-common: &volumes_common
+  - lamp_forge_data:/work/data
+
+services:
+  # =====================================================================
+  # CLI runner — equivalent to "lamp-forge run". Single-shot invocation.
+  # =====================================================================
+  lamp-forge:
+    build:
+      context: .
+      target: cli
+    image: lamp-forge:cli
+    container_name: lamp-forge-cli
+    environment:
+      <<: *env_common
+    volumes:
+      - ./config:/work/config:ro
+      - ./input:/work/input:ro
+      - ./results:/work/results
+      - ./cache:/work/cache
+    working_dir: /work
+    command: ["run", "--config", "/work/config/example_config.yaml"]
+    profiles: ["cli"]
+
+  # =====================================================================
+  # Web service — FastAPI app behind nginx.
+  # =====================================================================
+  web:
+    build:
+      context: .
+      target: web
+    image: lamp-forge:web
+    container_name: lamp-forge-web
+    environment: *env_common
+    volumes: *volumes_common
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    expose:
+      - "8000"
+    # When running without nginx (dev), bind to host directly:
+    ports:
+      - "${LAMP_FORGE_WEB_PORT:-8000}:8000"
+
+  # =====================================================================
+  # Async worker — consumes the arq queue. Scale with --scale worker=N.
+  # =====================================================================
+  worker:
+    build:
+      context: .
+      target: worker
+    image: lamp-forge:worker
+    environment: *env_common
+    volumes: *volumes_common
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: ${LAMP_FORGE_WORKER_REPLICAS:-1}
+
+  # =====================================================================
+  # Redis — arq queue broker + result backend.
+  # =====================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: lamp-forge-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # =====================================================================
+  # nginx reverse proxy (TLS termination + static file serving).
+  # Enable with: docker compose --profile prod up
+  # =====================================================================
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: lamp-forge-nginx
+    depends_on:
+      - web
+    ports:
+      - "${LAMP_FORGE_HTTP_PORT:-80}:80"
+      - "${LAMP_FORGE_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/certs:/etc/nginx/certs:ro
+    restart: unless-stopped
+    profiles: ["prod"]
+
+  # =====================================================================
+  # Jupyter for the walkthrough notebook (interactive profile).
+  # =====================================================================
+  jupyter:
+    build:
+      context: .
+      target: cli
+    image: lamp-forge:cli
+    container_name: lamp-forge-jupyter
+    environment: *env_common
+    volumes:
+      - ./notebooks:/work/notebooks
+      - ./config:/work/config:ro
+      - ./results:/work/results
+      - ./cache:/work/cache
+    working_dir: /work
+    ports:
+      - "8888:8888"
+    entrypoint: []
+    command:
+      - jupyter
+      - lab
+      - --ip=0.0.0.0
+      - --port=8888
+      - --no-browser
+      - --allow-root
+      - --ServerApp.token=
+      - --ServerApp.password=
+    profiles: ["interactive"]
+
+volumes:
+  lamp_forge_data:
+    driver: local
+  redis_data:
+    driver: local

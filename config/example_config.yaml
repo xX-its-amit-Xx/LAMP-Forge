@@ -1,0 +1,53 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: Mycobacterium tuberculosis rpoB gene
+# Why this example: rpoB is the canonical molecular marker for the M. tuberculosis
+# complex (MTBC) and the target of the GeneXpert rifampicin-resistance assay.
+# It is variable enough to distinguish M. tuberculosis from environmental
+# mycobacteria (M. smegmatis, M. avium) but conserved enough across clinical
+# isolates that a single LAMP assay is feasible.
+# ============================================================================
+
+target:
+  name: mycobacterium_tuberculosis_rpoB
+  taxon_id: 1773            # M. tuberculosis NCBI taxonomy
+  gene: rpoB                # leave null to fetch full assemblies instead
+  max_sequences: 20         # cap on Entrez retrieval
+  email: you@your-inst.edu  # REQUIRED by NCBI; replace before running
+  # accessions: []          # optional: bypass taxon search with explicit accessions
+                            # e.g. ["NC_000962.3", "NC_002945.4"]
+
+off_targets:
+  # Drop FASTA files into this directory. Each file should contain one
+  # genome / amplicon you want to screen against. Sensible candidates for
+  # an M. tuberculosis assay:
+  #   - M. smegmatis (environmental mycobacterium, common lab contaminant)
+  #   - M. avium (NTM, frequent clinical confounder)
+  #   - M. bovis (close relative within MTBC — testing assay specificity ceiling)
+  #   - Human chr1 fragment (host DNA, if sputum-derived input)
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80   # ≥80% identity → flagged
+  min_coverage_threshold: 0.80   # over ≥80% of primer length
+
+conservation:
+  window_size: 30            # nt, ~LAMP primer width
+  entropy_threshold: 0.25    # bits — lower = stricter
+  min_region_length: 250     # bp — LAMP needs ~200bp F2-B2 span + flanks
+
+primer:
+  tm_min: 60.0               # °C — LAMP polymerase optimum window
+  tm_max: 65.0
+  tm_match_tolerance: 2.0    # max Tm spread across F3/B3/FIP/BIP
+  gc_min: 40.0               # %
+  gc_max: 65.0
+  hairpin_dg_threshold: -2.0 # kcal/mol; primers with more-negative ΔG rejected
+  dimer_dg_threshold: -5.0   # kcal/mol; homodimer ceiling
+  amplicon_size:
+    f2_b2_min: 120           # bp — inner amplicon (F2 5'-end → B2 5'-end)
+    f2_b2_max: 160
+
+output:
+  dir: results
+  top_n: 10                  # how many top sets to highlight in the HTML report
+  generate_html: true
+  generate_csv: true
