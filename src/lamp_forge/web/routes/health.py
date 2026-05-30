@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lamp_forge.web.config import Settings, get_settings
-from lamp_forge.web.db import get_engine, session_dep
+from lamp_forge.web.db import session_dep
 from lamp_forge.web.schemas import HealthResponse, ReadinessResponse
 
 router = APIRouter()
@@ -41,22 +41,20 @@ async def ready(
         pool = request.app.state.redis_pool
         await pool.ping()
         statuses["redis"] = "ok"
-    except Exception as e:  # noqa: BLE001 — readiness must catch anything
+    except Exception as e:
         statuses["redis"] = f"down: {e.__class__.__name__}"
 
     # --- DB ---
     try:
         await session.execute(text("SELECT 1"))
         statuses["database"] = "ok"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         statuses["database"] = f"down: {e.__class__.__name__}"
 
     # --- CLI binaries ---
     statuses["mafft"] = "ok" if shutil.which("mafft") else "missing"
     statuses["blast"] = (
-        "ok"
-        if (shutil.which("blastn") and shutil.which("makeblastdb"))
-        else "missing"
+        "ok" if (shutil.which("blastn") and shutil.which("makeblastdb")) else "missing"
     )
 
     overall = "ok" if all(v == "ok" for v in statuses.values()) else "degraded"

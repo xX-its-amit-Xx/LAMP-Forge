@@ -71,9 +71,7 @@ class TestLoadConfig:
         with pytest.raises(ConfigError, match="primer"):
             load_config(_write(tmp_path / "c.yaml", minimal_config_dict))
 
-    def test_tm_min_above_max_rejected(
-        self, tmp_path: Path, minimal_config_dict: dict
-    ) -> None:
+    def test_tm_min_above_max_rejected(self, tmp_path: Path, minimal_config_dict: dict) -> None:
         minimal_config_dict["primer"]["tm_min"] = 70.0
         with pytest.raises(ConfigError, match="tm_min"):
             load_config(_write(tmp_path / "c.yaml", minimal_config_dict))
@@ -114,9 +112,7 @@ class TestLoadConfig:
         with pytest.raises(ConfigError, match="min_region_length"):
             load_config(_write(tmp_path / "c.yaml", minimal_config_dict))
 
-    def test_f2_b2_too_narrow_rejected(
-        self, tmp_path: Path, minimal_config_dict: dict
-    ) -> None:
+    def test_f2_b2_too_narrow_rejected(self, tmp_path: Path, minimal_config_dict: dict) -> None:
         minimal_config_dict["primer"]["amplicon_size"]["f2_b2_min"] = 50
         with pytest.raises(ConfigError, match="LAMP geometric floor"):
             load_config(_write(tmp_path / "c.yaml", minimal_config_dict))

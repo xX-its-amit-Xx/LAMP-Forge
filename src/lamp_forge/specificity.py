@@ -216,8 +216,8 @@ def _blastn_short(
         delimiter="\t",
     )
     for row in reader:
-        row["_primer"] = role_lookup[row["qseqid"]].sequence  # type: ignore[index]
-        row["_role"] = role_lookup[row["qseqid"]].role  # type: ignore[index]
+        row["_primer"] = role_lookup[row["qseqid"]].sequence
+        row["_role"] = role_lookup[row["qseqid"]].role
         rows.append(row)
     return rows
 
@@ -339,4 +339,4 @@ def write_specificity_tsv(primer_sets: Iterable[LampPrimerSet], path: Path) -> N
 
 def _records_have_content(records: list[SeqRecord]) -> bool:
     """Sanity check: are any of the parsed records non-empty?"""
-    return any(len(r.seq) > 0 for r in records)
+    return any(r.seq is not None and len(r.seq) > 0 for r in records)

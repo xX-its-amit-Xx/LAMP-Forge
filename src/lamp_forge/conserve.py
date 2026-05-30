@@ -177,9 +177,7 @@ def find_conserved_regions(
     Returns:
         List of :class:`ConservedRegion`, sorted by start coordinate.
     """
-    qualifies = (track.smoothed_entropy <= entropy_threshold) & (
-        track.coverage >= min_coverage
-    )
+    qualifies = (track.smoothed_entropy <= entropy_threshold) & (track.coverage >= min_coverage)
 
     regions: list[ConservedRegion] = []
     width = len(qualifies)

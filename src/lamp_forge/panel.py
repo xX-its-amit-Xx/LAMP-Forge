@@ -37,7 +37,7 @@ import logging
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -169,9 +169,7 @@ def load_candidate_sets(
     if not isinstance(raw_sets, list):
         raise ValueError(f"{path}: 'primer_sets' is not a list")
 
-    raw_sorted = sorted(
-        raw_sets, key=lambda s: float(s.get("composite_score", 0.0)), reverse=True
-    )
+    raw_sorted = sorted(raw_sets, key=lambda s: float(s.get("composite_score", 0.0)), reverse=True)
 
     candidates: list[PanelCandidateSet] = []
     for raw in raw_sorted[:top_n]:
@@ -227,9 +225,7 @@ def _default_dg_func() -> DimerFunc:
     return heterodimer_dg
 
 
-def _set_pair_worst(
-    a: PanelCandidateSet, b: PanelCandidateSet, dg_func: DimerFunc
-) -> CrossDimer:
+def _set_pair_worst(a: PanelCandidateSet, b: PanelCandidateSet, dg_func: DimerFunc) -> CrossDimer:
     """Most-negative heterodimer across all oligo pairs between two sets.
 
     The returned :class:`CrossDimer` records which oligo pair was worst, so the
@@ -386,9 +382,7 @@ def _select_greedy(
 ) -> PanelResult:
     """Coordinate-ascent: from each target's best set, swap one target at a time."""
     targets = list(candidates_by_target)
-    selection = {
-        t: max(candidates_by_target[t], key=lambda c: c.composite_score) for t in targets
-    }
+    selection = {t: max(candidates_by_target[t], key=lambda c: c.composite_score) for t in targets}
     worst, flagged = _evaluate(selection, cache, threshold)
     evaluated = 1
 
@@ -466,7 +460,7 @@ def write_panel_json(result: PanelResult, path: Path) -> None:
 
     payload = {
         "version": __version__,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "search_mode": result.search_mode,
         "n_combinations_evaluated": result.n_combinations_evaluated,
         "dimer_dg_threshold": result.dimer_dg_threshold,
@@ -508,9 +502,7 @@ def write_panel_csv(result: PanelResult, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as fh:
         writer = csv.writer(fh)
-        writer.writerow(
-            ["target", "set_id", "role", "primer_name", "sequence", "length"]
-        )
+        writer.writerow(["target", "set_id", "role", "primer_name", "sequence", "length"])
         for target, cset in result.selection.items():
             for o in cset.oligos:
                 writer.writerow(
@@ -604,9 +596,7 @@ _PANEL_HTML_TEMPLATE = r"""<!doctype html>
 """
 
 
-def render_panel_html(
-    result: PanelResult, path: Path, dg_func: DimerFunc | None = None
-) -> Path:
+def render_panel_html(result: PanelResult, path: Path, dg_func: DimerFunc | None = None) -> Path:
     """Render the panel HTML report (cross-dimer heatmap + selected panel table)."""
     import base64
     import io

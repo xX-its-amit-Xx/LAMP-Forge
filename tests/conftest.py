@@ -88,9 +88,9 @@ def example_config(tmp_path: Path) -> PipelineConfig:
     cache = tmp_path / "cache"
     output = tmp_path / "results"
     off_targets = tmp_path / "off_targets"
-    cache.mkdir()
-    output.mkdir()
-    off_targets.mkdir()
+    cache.mkdir(exist_ok=True)
+    output.mkdir(exist_ok=True)
+    off_targets.mkdir(exist_ok=True)
     return PipelineConfig(
         target_name="test_target",
         taxon_id=1773,

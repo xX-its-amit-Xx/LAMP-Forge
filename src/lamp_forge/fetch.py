@@ -13,7 +13,6 @@ to debug. The tradeoff is some hand-rolled pagination logic here.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import time
@@ -42,10 +41,10 @@ def _cache_path(cache_dir: Path, key: str) -> Path:
 
 def _configure_entrez(email: str) -> None:
     """Set the module-level Entrez configuration NCBI requires."""
-    Entrez.email = email
+    Entrez.email = email  # type: ignore[assignment]
     api_key = os.environ.get("NCBI_API_KEY")
     if api_key:
-        Entrez.api_key = api_key
+        Entrez.api_key = api_key  # type: ignore[assignment]
         logger.debug("Using NCBI API key (rate limit: 10 req/sec)")
     else:
         logger.debug("No NCBI_API_KEY set (rate limit: 3 req/sec)")
@@ -200,6 +199,7 @@ def manifest(records: list[SeqRecord]) -> dict[str, Any]:
     """
     entries = []
     for r in records:
+        assert r.seq is not None
         md5 = hashlib.md5(str(r.seq).encode()).hexdigest()
         entries.append({"id": r.id, "length": len(r.seq), "md5": md5})
     return {"count": len(records), "records": entries}

@@ -71,9 +71,15 @@ class TestSlideCandidates:
         assert cands == []
 
     def test_yields_some_for_realistic_input(self, example_config: PipelineConfig) -> None:
+        # A real ~220 bp slice of M. tuberculosis rpoB. Chosen because it
+        # carries plenty of 18-22 nt windows landing in the 58-68 C Tm band
+        # under primer3's default LAMP-buffer parameters, so the candidate
+        # list is unambiguously non-empty across primer3 versions.
         seq = (
-            "ATGCGTAACCGGTTATCGATCGATCGATGCATGCATCGATCGATCGGTACGTACGTAGCATGCATGCAT"
-            "CGATCGATCGATCGATCGATCGATGCATGCATCGATCGATCGATGCATCGATGCATGCATCGAT"
+            "ATGCTGGACCAGAATAACCCGCTGTCGGGGTTGACCCACAAGCGCCGACTGTCGGCGCTGGGG"
+            "CCCGGCGGTCTGTCACGTGAGCGTGCCGGGCTGGAGGTCCGCGACGTGCACCCGTCGCACTAC"
+            "GGCCGGATGTGCCCGATCGAAACGCCCGAAGGGCCCAACATCGGTCTGATCGGCTCACTGTCG"
+            "GTCTACGCGCGGGTCAATCCGTTCGGGTTCATCG"
         )
         cands = _slide_candidates(seq, 0, F2_LEN_RANGE, "+", example_config)
         assert len(cands) > 0
@@ -93,9 +99,7 @@ class TestSlideCandidates:
 class TestDesignSetsForRegion:
     def test_too_short_region_returns_empty(self, example_config: PipelineConfig) -> None:
         # Region length below f2_b2_max + flanks → nothing can be designed.
-        region = ConservedRegion(
-            "R000", 0, 50, 0.0, 0.0, "A" * 50
-        )
+        region = ConservedRegion("R000", 0, 50, 0.0, 0.0, "A" * 50)
         sets = design_sets_for_region(region, example_config)
         assert sets == []
 
@@ -103,9 +107,7 @@ class TestDesignSetsForRegion:
         self, conserved_msa: MultipleSeqAlignment, example_config: PipelineConfig
     ) -> None:
         track = compute_track(conserved_msa, window_size=30)
-        regions = find_conserved_regions(
-            track, entropy_threshold=0.10, min_region_length=200
-        )
+        regions = find_conserved_regions(track, entropy_threshold=0.10, min_region_length=200)
         if not regions:
             pytest.skip("Fixture didn't produce a conserved region")
         sets = design_sets_for_region(regions[0], example_config, max_sets=20)
@@ -133,15 +135,14 @@ class TestDesignAll:
         self, conserved_msa: MultipleSeqAlignment, example_config: PipelineConfig
     ) -> None:
         track = compute_track(conserved_msa, window_size=30)
-        regions = find_conserved_regions(
-            track, entropy_threshold=0.15, min_region_length=200
-        )
+        regions = find_conserved_regions(track, entropy_threshold=0.15, min_region_length=200)
         sets = design_all(regions, example_config, max_sets_per_region=10)
         if len(sets) >= 2:
             # design_all does not enforce a final sort across regions — only
             # design_sets_for_region sorts within a region. We just check
             # that within each region the order is descending by composite.
             from itertools import groupby
+
             for _, group in groupby(sets, key=lambda s: s.region_id):
                 gs = list(group)
                 scores = [s.composite_score for s in gs]

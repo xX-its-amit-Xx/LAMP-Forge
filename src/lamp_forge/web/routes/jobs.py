@@ -193,9 +193,7 @@ async def submit_job(
     copied: list[str] = []
     for ref in body.off_targets.fasta_files:
         # ref may be an upload_id prefix (e.g. "abc123") or a full filename.
-        candidates = (
-            list(user_uploads.glob(f"{ref}_*")) if user_uploads.exists() else []
-        )
+        candidates = list(user_uploads.glob(f"{ref}_*")) if user_uploads.exists() else []
         if not candidates:
             # Fallback: literal filename lookup.
             literal = user_uploads / ref
@@ -313,7 +311,7 @@ async def cancel_job(
         if job.arq_job_id:
             arq_job = ArqJob(job.arq_job_id, request.app.state.redis_pool)
             await arq_job.abort(timeout=2)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("arq_abort_failed", job_id=job_id, error=str(e))
 
     refreshed = await get_job(session, job_id)

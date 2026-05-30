@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-import yaml
 from click.testing import CliRunner
 
 from lamp_forge.cli import cli

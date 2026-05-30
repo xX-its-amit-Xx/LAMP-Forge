@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
-from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from lamp_forge import align, conserve, fetch, primer_design, report, specificity
@@ -97,7 +96,7 @@ class _CancelledError(RuntimeError):
     """Raised mid-pipeline when the user cancels — caught and turned into a clean exit."""
 
 
-async def _run_blocking(func, *args, **kwargs):
+async def _run_blocking(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     """Run a sync function in the default executor."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
@@ -109,7 +108,7 @@ async def _run_blocking(func, *args, **kwargs):
 
 
 async def run_pipeline(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
-    """arq task entry — run the LAMP-Forge pipeline for ``job_id``.
+    """Arq task entry — run the LAMP-Forge pipeline for ``job_id``.
 
     Stages mirror :func:`lamp_forge.pipeline.run_pipeline` but interleave
     DB progress writes and cancellation checks so the UI can show a live
@@ -142,9 +141,7 @@ async def run_pipeline(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
         raw_fasta = config.output_dir / "work" / "sequences.fasta"
         raw_fasta.parent.mkdir(parents=True, exist_ok=True)
         await _run_blocking(fetch.write_fasta, records, raw_fasta)
-        await _push_progress(
-            job_id, "fetch", f"Retrieved {len(records)} sequence(s)", 15
-        )
+        await _push_progress(job_id, "fetch", f"Retrieved {len(records)} sequence(s)", 15)
 
         # --- 2. Align ---
         await _push_progress(job_id, "align", "Running MAFFT alignment", 20)
@@ -163,9 +160,7 @@ async def run_pipeline(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
         await _push_progress(job_id, "conserve", "Computing conservation track", 40)
         if await _check_cancelled(job_id):
             raise _CancelledError()
-        track = await _run_blocking(
-            conserve.compute_track, alignment, config.window_size
-        )
+        track = await _run_blocking(conserve.compute_track, alignment, config.window_size)
         regions = await _run_blocking(
             conserve.find_conserved_regions,
             track,
@@ -173,14 +168,10 @@ async def run_pipeline(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
             min_region_length=config.min_region_length,
         )
         report.write_conservation_tsv(track, config.output_dir / "conservation.tsv")
-        await _push_progress(
-            job_id, "conserve", f"Detected {len(regions)} conserved region(s)", 55
-        )
+        await _push_progress(job_id, "conserve", f"Detected {len(regions)} conserved region(s)", 55)
 
         # --- 4. Design ---
-        await _push_progress(
-            job_id, "design", "Generating candidate LAMP primer sets", 60
-        )
+        await _push_progress(job_id, "design", "Generating candidate LAMP primer sets", 60)
         if await _check_cancelled(job_id):
             raise _CancelledError()
         primer_sets = await _run_blocking(primer_design.design_all, regions, config)
@@ -207,9 +198,7 @@ async def run_pipeline(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
                     raise _CancelledError()
                 db_path = config.output_dir / "work" / "off_targets_db"
                 await _run_blocking(specificity.build_blast_db, off_files, db_path)
-                await _run_blocking(
-                    specificity.screen_all, primer_sets, db_path, config
-                )
+                await _run_blocking(specificity.screen_all, primer_sets, db_path, config)
                 specificity.write_specificity_tsv(
                     primer_sets, config.output_dir / "specificity.tsv"
                 )
@@ -252,9 +241,7 @@ async def run_pipeline(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
             await finalize_metrics(session, job_id, len(primer_sets), len(regions))
             await update_status(session, job_id, JobStatus.succeeded)
             await session.commit()
-        await _push_progress(
-            job_id, "complete", f"Job complete: {len(primer_sets)} sets", 100
-        )
+        await _push_progress(job_id, "complete", f"Job complete: {len(primer_sets)} sets", 100)
         logger.info(
             "job_completed",
             job_id=job_id,

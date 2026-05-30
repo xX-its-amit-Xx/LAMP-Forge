@@ -95,8 +95,7 @@ def load_config(path: str | Path) -> PipelineConfig:
         raise ConfigError("primer.amplicon_size.f2_b2_min must be < f2_b2_max")
     if f2_b2_min < 80:
         raise ConfigError(
-            f"f2_b2_min={f2_b2_min} is below the LAMP geometric floor (~80bp); "
-            "primers will overlap"
+            f"f2_b2_min={f2_b2_min} is below the LAMP geometric floor (~80bp); primers will overlap"
         )
 
     min_region_length = int(_require(conservation, "min_region_length", "conservation"))

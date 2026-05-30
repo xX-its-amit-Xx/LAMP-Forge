@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from lamp_forge.web.schemas import JobCreate, PrimerSpec, TargetSpec
+from lamp_forge.web.schemas import JobCreate, TargetSpec
 
 
 def test_target_requires_email() -> None:
@@ -54,9 +54,7 @@ def test_extra_fields_rejected() -> None:
 
 
 def test_defaults_fill_in() -> None:
-    job = JobCreate.model_validate(
-        {"target": {"name": "t", "taxon_id": 1, "email": "a@b.com"}}
-    )
+    job = JobCreate.model_validate({"target": {"name": "t", "taxon_id": 1, "email": "a@b.com"}})
     assert job.primer.tm_min == 60.0
     assert job.primer.tm_max == 65.0
     assert job.conservation.min_region_length == 250

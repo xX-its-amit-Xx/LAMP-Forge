@@ -8,6 +8,7 @@ path constructs prod and test instances identically.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -18,6 +19,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
 from lamp_forge.web.config import Settings, get_settings
@@ -30,7 +32,7 @@ logger = get_logger("lamp_forge.web.app")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startup: init DB, open Redis pool. Shutdown: close pool cleanly."""
     settings: Settings = get_settings()
     configure_logging(level=settings.log_level, json_logs=settings.log_json)
@@ -97,7 +99,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # --- Request ID middleware (sets a correlation id on every request) ---
     @app.middleware("http")
-    async def _request_id_middleware(request: Request, call_next):
+    async def _request_id_middleware(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         request.state.request_id = request_id
         # Bind to structlog contextvars so every log line in this request
@@ -122,14 +126,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ui.router, tags=["ui"])
 
     # Static assets for the HTML UI.
-    static_dir = (
-        __import__("pathlib").Path(__file__).resolve().parent / "static"
-    )
+    static_dir = __import__("pathlib").Path(__file__).resolve().parent / "static"
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     # --- Metrics ---
     if s.enable_metrics:
+
         @app.get("/metrics", include_in_schema=False)
         async def metrics() -> Response:
             return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

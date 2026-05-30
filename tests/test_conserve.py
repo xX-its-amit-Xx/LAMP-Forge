@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-import math
-
-import numpy as np
 import pytest
 from Bio.Align import MultipleSeqAlignment
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 
 from lamp_forge.conserve import (
-    ConservationTrack,
     _column_consensus,
     _column_coverage,
     _column_entropy,
@@ -76,9 +70,7 @@ class TestComputeTrack:
         assert len(track.consensus) == width
         assert track.coverage.shape == (width,)
 
-    def test_conserved_middle_has_low_entropy(
-        self, conserved_msa: MultipleSeqAlignment
-    ) -> None:
+    def test_conserved_middle_has_low_entropy(self, conserved_msa: MultipleSeqAlignment) -> None:
         track = compute_track(conserved_msa, window_size=30)
         # The fixture has identical positions 150-450.
         conserved_slice = track.smoothed_entropy[200:400]
@@ -86,9 +78,7 @@ class TestComputeTrack:
             f"Expected near-zero entropy in conserved region, got {conserved_slice.max():.3f}"
         )
 
-    def test_variable_flanks_have_higher_entropy(
-        self, conserved_msa: MultipleSeqAlignment
-    ) -> None:
+    def test_variable_flanks_have_higher_entropy(self, conserved_msa: MultipleSeqAlignment) -> None:
         track = compute_track(conserved_msa, window_size=30)
         # Flank positions are randomised → entropy should be measurably > 0.
         # Use the raw track here (smoothed pulls in conserved-region zeros at
@@ -110,9 +100,7 @@ class TestComputeTrack:
 class TestFindConservedRegions:
     def test_detects_conserved_middle(self, conserved_msa: MultipleSeqAlignment) -> None:
         track = compute_track(conserved_msa, window_size=30)
-        regions = find_conserved_regions(
-            track, entropy_threshold=0.10, min_region_length=200
-        )
+        regions = find_conserved_regions(track, entropy_threshold=0.10, min_region_length=200)
         assert len(regions) >= 1
         biggest = max(regions, key=lambda r: r.length)
         assert biggest.length >= 200
@@ -121,27 +109,19 @@ class TestFindConservedRegions:
 
     def test_too_short_regions_dropped(self, conserved_msa: MultipleSeqAlignment) -> None:
         track = compute_track(conserved_msa, window_size=30)
-        regions = find_conserved_regions(
-            track, entropy_threshold=0.10, min_region_length=10000
-        )
+        regions = find_conserved_regions(track, entropy_threshold=0.10, min_region_length=10000)
         assert regions == []
 
-    def test_strict_threshold_returns_empty(
-        self, conserved_msa: MultipleSeqAlignment
-    ) -> None:
+    def test_strict_threshold_returns_empty(self, conserved_msa: MultipleSeqAlignment) -> None:
         track = compute_track(conserved_msa, window_size=30)
-        regions = find_conserved_regions(
-            track, entropy_threshold=-1.0, min_region_length=200
-        )
+        regions = find_conserved_regions(track, entropy_threshold=-1.0, min_region_length=200)
         assert regions == []
 
     def test_region_ids_are_unique_and_sequential(
         self, conserved_msa: MultipleSeqAlignment
     ) -> None:
         track = compute_track(conserved_msa, window_size=30)
-        regions = find_conserved_regions(
-            track, entropy_threshold=0.20, min_region_length=50
-        )
+        regions = find_conserved_regions(track, entropy_threshold=0.20, min_region_length=50)
         ids = [r.region_id for r in regions]
         assert len(ids) == len(set(ids))
         for i, rid in enumerate(ids):

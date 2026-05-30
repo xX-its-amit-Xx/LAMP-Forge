@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,8 +49,7 @@ async def download_artefact(
     if filename not in ALLOWED_FILES:
         raise HTTPException(
             status_code=404,
-            detail=f"Artefact {filename!r} not available. "
-            f"Allowed: {sorted(ALLOWED_FILES)}",
+            detail=f"Artefact {filename!r} not available. Allowed: {sorted(ALLOWED_FILES)}",
         )
     if job.status != JobStatus.succeeded:
         raise HTTPException(
@@ -63,7 +60,5 @@ async def download_artefact(
     media_type, _ = ALLOWED_FILES[filename]
     path = settings.results_dir / job_id / filename
     if not path.exists():
-        raise HTTPException(
-            status_code=404, detail=f"Artefact file missing on disk: {filename}"
-        )
+        raise HTTPException(status_code=404, detail=f"Artefact file missing on disk: {filename}")
     return FileResponse(path=path, media_type=media_type, filename=filename)

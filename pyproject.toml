@@ -52,7 +52,7 @@ dev = [
 web = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
-    "pydantic>=2.6",
+    "pydantic[email]>=2.6",
     "pydantic-settings>=2.2",
     "python-multipart>=0.0.9",
     "sqlalchemy>=2.0",
@@ -137,6 +137,8 @@ ignore = [
     "D100", "D104", "D107",  # missing docstrings in module/package/init
     "D203", "D213",          # conflicting docstring rules
     "E501",                  # line too long (handled by formatter)
+    "B008",                  # FastAPI `Depends()` in defaults is the canonical pattern
+    "RUF001", "RUF002", "RUF003",  # × and Δ are intentional scientific notation
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -156,6 +158,9 @@ disallow_incomplete_defs = true
 check_untyped_defs = true
 no_implicit_optional = true
 ignore_missing_imports = true
+# Biopython and primer3 ship without complete type info — strict mode would
+# otherwise flag every call into them as a no-untyped-call error.
+untyped_calls_exclude = ["Bio", "primer3"]
 
 [[tool.mypy.overrides]]
 module = "tests.*"

@@ -82,12 +82,8 @@ async def require_api_key(
             detail="Missing API key. Pass Authorization: Bearer <key> or X-API-Key.",
         )
     if not _match(raw, settings.api_keys):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key."
-        )
-    return ApiKeyPrincipal(
-        key_id=_hash_key(raw), is_admin=_match(raw, settings.admin_api_keys)
-    )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key.")
+    return ApiKeyPrincipal(key_id=_hash_key(raw), is_admin=_match(raw, settings.admin_api_keys))
 
 
 async def require_admin(

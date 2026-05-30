@@ -14,9 +14,6 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 from lamp_forge.align import (
-    MafftError,
-    MafftNotFoundError,
-    align_records,
     load_alignment,
     run_mafft,
 )

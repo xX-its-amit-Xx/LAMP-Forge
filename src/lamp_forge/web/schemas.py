@@ -49,17 +49,23 @@ class OffTargetsSpec(BaseModel):
 
 
 class ConservationSpec(BaseModel):
+    """Conservation-analysis parameters (entropy window, region length cutoff)."""
+
     window_size: int = Field(30, ge=10, le=100)
     entropy_threshold: float = Field(0.25, ge=0.0, le=2.0)
     min_region_length: int = Field(250, ge=120, le=2000)
 
 
 class AmpliconSizeSpec(BaseModel):
+    """F2-B2 inner-amplicon length window for LAMP primer geometry."""
+
     f2_b2_min: int = Field(120, ge=80, le=500)
     f2_b2_max: int = Field(160, ge=80, le=500)
 
 
 class PrimerSpec(BaseModel):
+    """Primer design constraints (Tm, GC, thermodynamic thresholds, amplicon size)."""
+
     tm_min: float = Field(60.0, ge=40.0, le=80.0)
     tm_max: float = Field(65.0, ge=40.0, le=80.0)
     tm_match_tolerance: float = Field(2.0, ge=0.0, le=10.0)
@@ -67,10 +73,12 @@ class PrimerSpec(BaseModel):
     gc_max: float = Field(65.0, ge=0.0, le=100.0)
     hairpin_dg_threshold: float = Field(-2.0)
     dimer_dg_threshold: float = Field(-5.0)
-    amplicon_size: AmpliconSizeSpec = Field(default_factory=AmpliconSizeSpec)
+    amplicon_size: AmpliconSizeSpec = Field(default_factory=AmpliconSizeSpec)  # type: ignore[arg-type]
 
 
 class OutputSpec(BaseModel):
+    """Output-rendering options (ranked-set count, HTML/CSV toggles)."""
+
     top_n: int = Field(10, ge=1, le=100)
     generate_html: bool = True
     generate_csv: bool = True
@@ -82,10 +90,10 @@ class JobCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target: TargetSpec
-    off_targets: OffTargetsSpec = Field(default_factory=OffTargetsSpec)
-    conservation: ConservationSpec = Field(default_factory=ConservationSpec)
-    primer: PrimerSpec = Field(default_factory=PrimerSpec)
-    output: OutputSpec = Field(default_factory=OutputSpec)
+    off_targets: OffTargetsSpec = Field(default_factory=OffTargetsSpec)  # type: ignore[arg-type]
+    conservation: ConservationSpec = Field(default_factory=ConservationSpec)  # type: ignore[arg-type]
+    primer: PrimerSpec = Field(default_factory=PrimerSpec)  # type: ignore[arg-type]
+    output: OutputSpec = Field(default_factory=OutputSpec)  # type: ignore[arg-type]
 
     @field_validator("primer")
     @classmethod
@@ -131,8 +139,7 @@ class JobDetail(JobSummary):
     result_urls: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Map of artefact name → absolute URL. Populated only when status "
-            "is `succeeded`."
+            "Map of artefact name → absolute URL. Populated only when status is `succeeded`."
         ),
     )
 

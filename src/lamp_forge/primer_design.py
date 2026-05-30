@@ -61,8 +61,8 @@ B1C_LEN_RANGE = (20, 22)
 LOOP_LEN_RANGE = (18, 22)
 
 # Geometric gaps in bp.
-F3_F2_GAP = (0, 20)   # F3 ends 0-20 bp before F2 starts (5' side)
-B2_B3_GAP = (0, 20)   # B3 starts 0-20 bp after B2 ends (3' side)
+F3_F2_GAP = (0, 20)  # F3 ends 0-20 bp before F2 starts (5' side)
+B2_B3_GAP = (0, 20)  # B3 starts 0-20 bp after B2 ends (3' side)
 F2_F1_GAP = (40, 60)  # F2 ends 40-60 bp before F1 starts (inner spacing)
 B1_B2_GAP = (40, 60)  # B1 ends 40-60 bp before B2 starts (inner spacing)
 
@@ -259,7 +259,7 @@ def _make_chimeric_primer(
         role=role,
         sequence=assembled,
         start=0,  # filled by caller
-        end=0,    # filled by caller
+        end=0,  # filled by caller
         strand="+" if role == "FIP" else "-",
         tm=(inner_tm + outer_tm) / 2,
         gc_percent=gc_percent(assembled),
@@ -448,16 +448,12 @@ def design_sets_for_region(
         lf_region_start = f2.end - region.start
         lf_region_end = f1c.start - region.start
         lf_seq = seq[lf_region_start:lf_region_end] if lf_region_end > lf_region_start else ""
-        lf_cands = (
-            _slide_candidates(lf_seq, f2.end, LOOP_LEN_RANGE, "-", cfg) if lf_seq else []
-        )
+        lf_cands = _slide_candidates(lf_seq, f2.end, LOOP_LEN_RANGE, "-", cfg) if lf_seq else []
 
         lb_region_start = b1c.end - region.start
         lb_region_end = b2.start - region.start
         lb_seq = seq[lb_region_start:lb_region_end] if lb_region_end > lb_region_start else ""
-        lb_cands = (
-            _slide_candidates(lb_seq, b1c.end, LOOP_LEN_RANGE, "+", cfg) if lb_seq else []
-        )
+        lb_cands = _slide_candidates(lb_seq, b1c.end, LOOP_LEN_RANGE, "+", cfg) if lb_seq else []
 
         lf = _make_primer(lf_cands[0], "LF") if lf_cands else None
         lb = _make_primer(lb_cands[0], "LB") if lb_cands else None

@@ -15,12 +15,18 @@ backend-agnostic.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import JSON, DateTime, Integer, String, Text, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from lamp_forge.web.config import get_settings
@@ -44,7 +50,7 @@ class Base(DeclarativeBase):
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Job(Base):
@@ -69,9 +75,7 @@ class Job(Base):
     n_conserved_regions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     arq_job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=_utcnow, onupdate=_utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -81,11 +85,11 @@ class Job(Base):
 # ---------------------------------------------------------------------------
 
 
-_engine = None
+_engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
-def _build_engine():
+def _build_engine() -> AsyncEngine:
     settings = get_settings()
     settings.ensure_dirs()
     url = settings.resolved_db_url
@@ -98,7 +102,7 @@ def _build_engine():
     return create_async_engine(url, echo=False, future=True, connect_args=connect_args)
 
 
-def get_engine():
+def get_engine() -> AsyncEngine:
     """Return the (lazily initialised) SQLAlchemy async engine."""
     global _engine
     if _engine is None:
@@ -128,7 +132,7 @@ async def init_db() -> None:
             await conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
 
 
-async def session_dep() -> AsyncSession:  # type: ignore[return-type]
+async def session_dep() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency yielding a session.
 
     Used as ``session: AsyncSession = Depends(session_dep)`` in routes.

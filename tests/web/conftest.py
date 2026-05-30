@@ -7,7 +7,6 @@ Redis or arq worker. The pipeline-task code path is exercised separately in
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -31,6 +30,13 @@ def _set_dev_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from lamp_forge.web.config import get_settings
 
     get_settings.cache_clear()
+    # The module-level SQLAlchemy engine + session factory are also cached
+    # globally; without resetting them, every test would reuse the first
+    # test's tmp_path sqlite file and see the others' rows.
+    from lamp_forge.web import db as db_mod
+
+    db_mod._engine = None
+    db_mod._session_factory = None
 
 
 @pytest_asyncio.fixture
@@ -43,9 +49,7 @@ async def app(monkeypatch: pytest.MonkeyPatch):
     fake_pool = MagicMock()
     fake_pool.ping = AsyncMock(return_value=True)
     fake_pool.aclose = AsyncMock()
-    fake_pool.enqueue_job = AsyncMock(
-        return_value=MagicMock(job_id="arq-test-job"), spec=None
-    )
+    fake_pool.enqueue_job = AsyncMock(return_value=MagicMock(job_id="arq-test-job"), spec=None)
 
     async def _fake_get_pool() -> Any:
         return fake_pool

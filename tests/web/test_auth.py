@@ -31,9 +31,7 @@ async def test_invalid_key_rejected(_prod_with_keys, client) -> None:
 
 @pytest.mark.asyncio
 async def test_valid_key_accepted(_prod_with_keys, client) -> None:
-    res = await client.get(
-        "/api/v1/jobs", headers={"Authorization": "Bearer test-user-key"}
-    )
+    res = await client.get("/api/v1/jobs", headers={"Authorization": "Bearer test-user-key"})
     assert res.status_code == 200
 
 
@@ -48,20 +46,14 @@ async def test_admin_delete_user_cannot(_prod_with_keys, client) -> None:
             "email": "a@b.com",
         }
     }
-    create = await client.post(
-        "/api/v1/jobs", json=body, headers={"X-API-Key": "test-user-key"}
-    )
+    create = await client.post("/api/v1/jobs", json=body, headers={"X-API-Key": "test-user-key"})
     assert create.status_code == 202
     job_id = create.json()["id"]
 
     # Non-admin DELETE is forbidden.
-    res = await client.delete(
-        f"/api/v1/jobs/{job_id}", headers={"X-API-Key": "test-user-key"}
-    )
+    res = await client.delete(f"/api/v1/jobs/{job_id}", headers={"X-API-Key": "test-user-key"})
     assert res.status_code == 403
 
     # Admin DELETE works.
-    res = await client.delete(
-        f"/api/v1/jobs/{job_id}", headers={"X-API-Key": "test-admin-key"}
-    )
+    res = await client.delete(f"/api/v1/jobs/{job_id}", headers={"X-API-Key": "test-admin-key"})
     assert res.status_code == 204

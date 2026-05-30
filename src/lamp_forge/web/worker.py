@@ -11,6 +11,7 @@ container without depending on the API process to have run first.
 from __future__ import annotations
 
 import asyncio
+from typing import Any, ClassVar
 
 from arq.connections import RedisSettings
 
@@ -24,7 +25,7 @@ logger = get_logger("lamp_forge.web.worker")
 
 
 async def on_startup(ctx: dict) -> None:  # type: ignore[type-arg]
-    """arq startup hook — bootstrap logging + DB once per worker process."""
+    """Arq startup hook — bootstrap logging + DB once per worker process."""
     settings = get_settings()
     configure_logging(level=settings.log_level, json_logs=settings.log_json)
     settings.ensure_dirs()
@@ -33,7 +34,7 @@ async def on_startup(ctx: dict) -> None:  # type: ignore[type-arg]
 
 
 async def on_shutdown(ctx: dict) -> None:  # type: ignore[type-arg]
-    """arq shutdown hook."""
+    """Arq shutdown hook."""
     logger.info("worker_shutdown")
 
 
@@ -49,7 +50,7 @@ class WorkerSettings:
       ``LAMP_FORGE_JOB_TIMEOUT_SECONDS``.
     """
 
-    functions = [run_pipeline]
+    functions: ClassVar[list[Any]] = [run_pipeline]
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings: RedisSettings = redis_settings()

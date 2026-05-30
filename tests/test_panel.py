@@ -99,7 +99,9 @@ class TestLoadCandidateSets:
 
     def test_four_primer_set_has_four_oligos(self, tmp_path: Path) -> None:
         p = tmp_path / "sets.json"
-        _write_sets_json(p, [("S0", 0.8, {"f3": "AAAA", "b3": "CCCC", "fip": "GGGG", "bip": "TTTT"})])
+        _write_sets_json(
+            p, [("S0", 0.8, {"f3": "AAAA", "b3": "CCCC", "fip": "GGGG", "bip": "TTTT"})]
+        )
         cands = load_candidate_sets(p, "TGT")
         assert len(cands[0].oligos) == 4
 
@@ -107,11 +109,20 @@ class TestLoadCandidateSets:
         p = tmp_path / "sets.json"
         _write_sets_json(
             p,
-            [(
-                "S0",
-                0.8,
-                {"f3": "AAAA", "b3": "CCCC", "fip": "GGGG", "bip": "TTTT", "lf": "ACAC", "lb": "GTGT"},
-            )],
+            [
+                (
+                    "S0",
+                    0.8,
+                    {
+                        "f3": "AAAA",
+                        "b3": "CCCC",
+                        "fip": "GGGG",
+                        "bip": "TTTT",
+                        "lf": "ACAC",
+                        "lb": "GTGT",
+                    },
+                )
+            ],
         )
         cands = load_candidate_sets(p, "TGT")
         roles = {o.role for o in cands[0].oligos}
@@ -142,9 +153,7 @@ class TestSelectPanel:
         b1 = _candidate("B", "B1", 0.9, ["b1x"])
         b2 = _candidate("B", "B2", 0.5, ["b2x"])
         dg = _make_dg({frozenset(("a1x", "b1x")): -12.0})
-        result = select_panel(
-            {"A": [a1, a2], "B": [b1, b2]}, dimer_dg_threshold=-5.0, dg_func=dg
-        )
+        result = select_panel({"A": [a1, a2], "B": [b1, b2]}, dimer_dg_threshold=-5.0, dg_func=dg)
         assert result.search_mode == "exhaustive"
         assert result.worst_dg == -2.0  # the bad -12 pairing was avoided
         assert result.is_clean
@@ -156,9 +165,7 @@ class TestSelectPanel:
         a1 = _candidate("A", "A1", 0.9, ["a1x"])
         a2 = _candidate("A", "A2", 0.5, ["a2x"])
         b1 = _candidate("B", "B1", 0.9, ["b1x"])
-        dg = _make_dg(
-            {frozenset(("a1x", "b1x")): -9.0, frozenset(("a2x", "b1x")): -8.0}
-        )
+        dg = _make_dg({frozenset(("a1x", "b1x")): -9.0, frozenset(("a2x", "b1x")): -8.0})
         result = select_panel({"A": [a1, a2], "B": [b1]}, dimer_dg_threshold=-5.0, dg_func=dg)
         assert not result.is_clean
         # Picks the less-bad of the two (A2: -8 beats A1: -9).
@@ -195,9 +202,7 @@ class TestMatrixAndOutputs:
 
         a = _candidate("A", "A1", 0.9, ["a1x", "a1y"])  # two oligos, same target
         b = _candidate("B", "B1", 0.9, ["b1x"])
-        result = select_panel(
-            {"A": [a], "B": [b]}, dg_func=_make_dg({}), dimer_dg_threshold=-5.0
-        )
+        result = select_panel({"A": [a], "B": [b]}, dg_func=_make_dg({}), dimer_dg_threshold=-5.0)
         from lamp_forge.panel import selected_oligos
 
         oligos = selected_oligos(result)

@@ -6,8 +6,6 @@ import csv
 import json
 from pathlib import Path
 
-import pytest
-
 from lamp_forge.conserve import compute_track, find_conserved_regions
 from lamp_forge.report import (
     plot_conservation,
@@ -92,9 +90,7 @@ class TestPlotConservation:
 
         msa = load_alignment(conserved_msa_fasta)
         track = compute_track(msa, window_size=30)
-        regions = find_conserved_regions(
-            track, entropy_threshold=0.20, min_region_length=100
-        )
+        regions = find_conserved_regions(track, entropy_threshold=0.20, min_region_length=100)
         uri = plot_conservation(track, regions, 0.20)
         assert uri.startswith("data:image/png;base64,")
         assert len(uri) > 200  # crude sanity that there's actually a PNG
@@ -130,9 +126,7 @@ class TestRenderHtml:
 
         msa = load_alignment(conserved_msa_fasta)
         track = compute_track(msa, window_size=30)
-        regions = find_conserved_regions(
-            track, entropy_threshold=0.20, min_region_length=100
-        )
+        regions = find_conserved_regions(track, entropy_threshold=0.20, min_region_length=100)
         # Need at least one region for the report to render a detail block,
         # but the HTML should render even with zero sets.
         sets = []
@@ -143,12 +137,26 @@ class TestRenderHtml:
             s.f3 = Primer("F3", s.f3.sequence, r.start, r.start + 20, "+", 62, 50, -1, -3)
             s.b3 = Primer("B3", s.b3.sequence, r.end - 20, r.end, "-", 62, 50, -1, -3)
             s.fip = Primer(
-                "FIP", s.fip.sequence, r.start + 30, r.start + 30 + len(s.fip.sequence),
-                "+", 62, 50, -1, -3,
+                "FIP",
+                s.fip.sequence,
+                r.start + 30,
+                r.start + 30 + len(s.fip.sequence),
+                "+",
+                62,
+                50,
+                -1,
+                -3,
             )
             s.bip = Primer(
-                "BIP", s.bip.sequence, r.end - 30 - len(s.bip.sequence), r.end - 30,
-                "-", 62, 50, -1, -3,
+                "BIP",
+                s.bip.sequence,
+                r.end - 30 - len(s.bip.sequence),
+                r.end - 30,
+                "-",
+                62,
+                50,
+                -1,
+                -3,
             )
             sets = [s]
         out = tmp_path / "report.html"

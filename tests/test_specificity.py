@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 from lamp_forge.specificity import (
-    BlastNotFoundError,
     _row_to_hit,
     build_blast_db,
     discover_off_targets,

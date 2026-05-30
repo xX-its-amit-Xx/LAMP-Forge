@@ -22,21 +22,22 @@ import io
 import json
 import logging
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import matplotlib
 
-matplotlib.use("Agg")  # noqa: E402 — must be set before pyplot import
+matplotlib.use("Agg")
 
-import matplotlib.patches as mpatches  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-from jinja2 import Environment, BaseLoader  # noqa: E402
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
+from jinja2 import BaseLoader, Environment
+from matplotlib.figure import Figure
 
-from lamp_forge.conserve import ConservationTrack  # noqa: E402
-from lamp_forge.types import ConservedRegion, LampPrimerSet, PipelineConfig  # noqa: E402
+from lamp_forge.conserve import ConservationTrack
+from lamp_forge.types import ConservedRegion, LampPrimerSet, PipelineConfig
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ logger = logging.getLogger(__name__)
 # ----------------------------------------------------------------------------
 
 
-def _fig_to_base64_png(fig: plt.Figure) -> str:
+def _fig_to_base64_png(fig: Figure) -> str:
     """Serialise a matplotlib figure to a base64 data URI."""
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=130)
@@ -72,8 +73,9 @@ def plot_conservation(
     """
     fig, ax = plt.subplots(figsize=(12, 3.5))
     x = np.arange(len(track.smoothed_entropy))
-    ax.plot(x, track.smoothed_entropy, color="#0369a1", linewidth=0.8,
-            label="smoothed entropy (bits)")
+    ax.plot(
+        x, track.smoothed_entropy, color="#0369a1", linewidth=0.8, label="smoothed entropy (bits)"
+    )
     ax.axhline(
         entropy_threshold,
         color="#dc2626",
@@ -215,7 +217,7 @@ def write_json(primer_sets: list[LampPrimerSet], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "version": "0.1.0",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "primer_sets": [_to_json_safe(s) for s in primer_sets],
     }
     with path.open("w") as fh:
@@ -298,7 +300,7 @@ def write_manifest(
 
     payload = {
         "lamp_forge_version": __version__,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "config": _to_json_safe(asdict(config) if is_dataclass(config) else config),
         "input": input_manifest,
         "n_conserved_regions": n_regions,
@@ -535,7 +537,7 @@ def render_html(
         n_regions=len(regions),
         n_sets=len(primer_sets),
         n_off_targets=n_off_targets,
-        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        generated_at=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
         version=__version__,
         alignment_width=len(track.smoothed_entropy),
         entropy_threshold=config.entropy_threshold,

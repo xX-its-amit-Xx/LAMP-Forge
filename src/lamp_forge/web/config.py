@@ -12,8 +12,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # ---- Auth ----
     api_keys: Annotated[
         list[str],
+        NoDecode,
         Field(
             default_factory=list,
             description=(
@@ -54,6 +55,7 @@ class Settings(BaseSettings):
     ]
     admin_api_keys: Annotated[
         list[str],
+        NoDecode,
         Field(
             default_factory=list,
             description="Subset of api_keys with admin privileges (delete jobs, view all).",
@@ -72,9 +74,7 @@ class Settings(BaseSettings):
 
     # ---- Redis / queue ----
     redis_url: str = Field("redis://localhost:6379/0", description="Redis URL for arq queue.")
-    job_timeout_seconds: int = Field(
-        1800, description="Hard timeout per job (30 min by default)."
-    )
+    job_timeout_seconds: int = Field(1800, description="Hard timeout per job (30 min by default).")
     job_retention_days: int = Field(
         14, description="How long completed job artefacts are kept before cleanup."
     )
@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     # ---- CORS ----
     cors_origins: Annotated[
         list[str],
+        NoDecode,
         Field(
             default_factory=lambda: ["http://localhost:8000"],
             description="Allowed CORS origins.",
@@ -107,6 +108,19 @@ class Settings(BaseSettings):
     # ---- NCBI passthrough ----
     ncbi_email: str = ""
     ncbi_api_key: str = ""
+
+    @field_validator("api_keys", "admin_api_keys", "cors_origins", mode="before")
+    @classmethod
+    def _split_comma_separated(cls, v: object) -> object:
+        """Parse comma-separated env vars into list[str].
+
+        pydantic-settings 2.x otherwise insists on JSON for list-typed env
+        values, but ``LAMP_FORGE_API_KEYS=key1,key2`` is what operators
+        actually set.
+        """
+        if isinstance(v, str):
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v
 
     @property
     def resolved_db_url(self) -> str:
@@ -149,4 +163,4 @@ def get_settings() -> Settings:
     Cached at process scope; tests use ``get_settings.cache_clear()`` plus a
     monkeypatched env to swap config.
     """
-    return Settings()
+    return Settings()  # type: ignore[call-arg]

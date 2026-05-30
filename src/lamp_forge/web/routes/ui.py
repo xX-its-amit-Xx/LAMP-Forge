@@ -24,9 +24,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def index(
-    request: Request, settings: Settings = Depends(get_settings)
-) -> HTMLResponse:
+async def index(request: Request, settings: Settings = Depends(get_settings)) -> HTMLResponse:
     """Landing page with links to docs, new-job form, and recent jobs."""
     return templates.TemplateResponse(
         request,
@@ -41,9 +39,11 @@ async def jobs_page(
     settings: Settings = Depends(get_settings),
     session: AsyncSession = Depends(session_dep),
 ) -> HTMLResponse:
-    """Recent-jobs dashboard. Auth is delegated to the browser session: in
-    dev mode (no API keys), shows all jobs; in prod, the user is expected
-    to pass their API key in via the dashboard form.
+    """Recent-jobs dashboard.
+
+    Auth is delegated to the browser session: in dev mode (no API keys), shows
+    all jobs; in prod, the user is expected to pass their API key in via the
+    dashboard form.
     """
     api_key_id = request.query_params.get("key_id")
     jobs = await list_jobs(session, api_key_id=api_key_id, limit=50)
@@ -111,6 +111,4 @@ async def job_progress_fragment(
     job = await get_job(session, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    return templates.TemplateResponse(
-        request, "_progress_fragment.html", {"job": job}
-    )
+    return templates.TemplateResponse(request, "_progress_fragment.html", {"job": job})
