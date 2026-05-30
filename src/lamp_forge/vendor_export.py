@@ -304,6 +304,69 @@ def write_twist_csv(rows: list[VendorRow], path: Path) -> None:
             )
 
 
+def rows_from_panel_json(
+    selection: list[dict[str, Any]],
+    *,
+    scale_override: str | None = None,
+    purification_override: str | None = None,
+) -> list[VendorRow]:
+    """Build :class:`VendorRow` objects from a ``panel.json`` selection list.
+
+    Converts the ``selection`` array written by ``lamp-forge panel`` into
+    vendor order rows for *all* targets at once — removing the need to run
+    ``lamp-forge export`` separately for each target after a panel run.
+
+    Each primer name is prefixed with its target label (``{target}_{set_id}_{role}``),
+    so every row in the order sheet is self-documenting.
+
+    .. note::
+        Oligos in ``panel.json`` do not carry Tm data.  The ``tm_celsius``
+        field of each returned :class:`VendorRow` is set to ``0.0``.  If the
+        informational Tm column is needed in the Twist output, use
+        :func:`rows_from_json_data` with the per-target ``primer_sets.json``
+        files instead.
+
+    Args:
+        selection: The ``"selection"`` list from a ``panel.json`` file.
+            Each element has keys ``target`` (str), ``set_id`` (str), and
+            ``oligos`` (list of ``{"role": ..., "sequence": ...}``).
+        scale_override: Override synthesis scale for all primers.
+        purification_override: Override purification level for all primers.
+
+    Returns:
+        :class:`VendorRow` objects grouped by target in selection order,
+        primers in canonical LAMP role order (F3 → B3 → FIP → BIP → LF → LB)
+        within each target.
+    """
+    rows: list[VendorRow] = []
+    for item in selection:
+        target = str(item["target"])
+        set_id = str(item["set_id"])
+        oligos_raw: list[dict[str, Any]] = item.get("oligos", [])
+        oligos_by_role: dict[str, str] = {
+            str(o["role"]).upper(): str(o["sequence"]).upper()
+            for o in oligos_raw
+            if "role" in o and "sequence" in o
+        }
+        for role in ("F3", "B3", "FIP", "BIP", "LF", "LB"):
+            sequence = oligos_by_role.get(role)
+            if sequence is None:
+                continue
+            rows.append(
+                VendorRow(
+                    name=_primer_name(set_id, role, target),
+                    sequence=sequence,
+                    scale=scale_override or _DEFAULT_SCALE.get(role, "100nm"),
+                    purification=purification_override or _DEFAULT_PURIFICATION.get(role, "HPLC"),
+                    role=role,
+                    set_id=set_id,
+                    tm_celsius=0.0,
+                    length=len(sequence),
+                )
+            )
+    return rows
+
+
 def write_vendor_csv(
     rows: list[VendorRow],
     path: Path,

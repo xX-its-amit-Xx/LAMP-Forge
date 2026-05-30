@@ -1002,6 +1002,116 @@ def scaffold(
         click.echo(f"  lamp-forge validate --config {out_path}")
 
 
+@cli.command(name="panel-export")
+@click.option(
+    "--panel",
+    "panel_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="panel.json produced by 'lamp-forge panel'.",
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["idt", "twist"], case_sensitive=False),
+    default="idt",
+    show_default=True,
+    help="Vendor order-sheet format.",
+)
+@click.option(
+    "--out",
+    "out_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output CSV path. Defaults to <panel_dir>/panel_<format>_order.csv.",
+)
+@click.option(
+    "--scale",
+    default=None,
+    help=(
+        "Override synthesis scale for all primers "
+        "(e.g. '25nm', '100nm', '250nm'). "
+        "Default: role-specific (25nm for F3/B3/LF/LB, 100nm for FIP/BIP)."
+    ),
+)
+@click.option(
+    "--purification",
+    default=None,
+    help=(
+        "Override purification for all primers "
+        "(e.g. 'STD', 'HPLC', 'PAGE'). "
+        "Default: role-specific (STD for outer/loop primers, HPLC for FIP/BIP)."
+    ),
+)
+def panel_export(
+    panel_path: Path,
+    fmt: str,
+    out_path: Path | None,
+    scale: str | None,
+    purification: str | None,
+) -> None:
+    r"""Export all primers from a multiplex panel to a single vendor order CSV.
+
+    Reads the panel.json produced by 'lamp-forge panel' and exports the
+    selected primer set for every target into one IDT or Twist order sheet --
+    removing the need to run 'lamp-forge export' separately for each target.
+
+    Each primer name is prefixed with its target label so rows are
+    self-documenting in the vendor portal (e.g. SRB_region_01_set_001_FIP).
+
+    Note: Tm values are not stored in panel.json; the Tm column in Twist
+    output will show 0.0.  For per-primer Tm, use 'lamp-forge export
+    --input primer_sets.json' for each target individually.
+
+    \b
+    Example (5-channel oilfield MIC panel, IDT format):
+        lamp-forge panel-export \
+          --panel results/mic_5plex_panel/panel.json \
+          --format idt \
+          --out orders/mic_5plex_idt_order.csv
+
+    \b
+    Example (farm biosecurity 4-plex, Twist format):
+        lamp-forge panel-export \
+          --panel results/farm_biosecurity_4plex/panel.json \
+          --format twist \
+          --out orders/farm_biosecurity_twist.csv
+    """
+    import json
+
+    from lamp_forge.vendor_export import VendorFormat, rows_from_panel_json, write_vendor_csv
+
+    with panel_path.open(encoding="utf-8") as fh:
+        panel_data: dict[str, object] = json.load(fh)
+
+    selection_raw = panel_data.get("selection", [])
+    if not isinstance(selection_raw, list) or not selection_raw:
+        click.secho("No selection found in panel.json.", fg="red", err=True)
+        sys.exit(1)
+
+    vendor_fmt = VendorFormat(fmt.lower())
+    if out_path is None:
+        out_path = panel_path.parent / f"panel_{fmt.lower()}_order.csv"
+
+    rows = rows_from_panel_json(
+        selection_raw,
+        scale_override=scale,
+        purification_override=purification,
+    )
+    if not rows:
+        click.secho("No primers extracted from panel.json.", fg="red", err=True)
+        sys.exit(1)
+
+    write_vendor_csv(rows, out_path, vendor_fmt)
+
+    n_targets = len(selection_raw)
+    click.secho(
+        f"Wrote {len(rows)} primers ({n_targets} target(s)) -> {out_path}",
+        fg="green",
+    )
+    click.echo(f"Format: {vendor_fmt.value.upper()} bulk order")
+
+
 @cli.command(name="version")
 def version() -> None:
     """Print version and exit."""
