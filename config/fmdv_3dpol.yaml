@@ -1,0 +1,56 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: Foot-and-mouth disease virus (FMDV) — pan-serotype detection via 3D gene
+# Why this example: FMDV is a WOAH/OIE Tier 1 notifiable RNA virus with 7
+# antigenically distinct serotypes (O, A, C, SAT1, SAT2, SAT3, Asia1) sharing
+# as little as 30% VP1 nucleotide identity across serotypes.  The 3D RNA-dependent
+# RNA polymerase gene (~1800 nt) is the most conserved coding region and the
+# target of published RT-PCR and RT-LAMP assays (de Vries et al. 2010;
+# Soltan et al. 2018).  One-step RT-LAMP at 63-65 degC on a portable platform
+# delivers a quarantine-decision result in under 30 minutes.
+#
+# This is an RNA-virus target: use lamp-forge rt-check after designing to
+# confirm all primers meet the one-step RT-LAMP Tm floor before ordering.
+# ============================================================================
+
+target:
+  name: fmdv_3Dpol
+  taxon_id: 12110            # Foot-and-mouth disease virus
+  gene: 3D                   # RNA polymerase; alt annotation: "3Dpol" / "RdRp"
+  max_sequences: 40          # span serotypes O, A, C, SAT1, SAT2, SAT3, Asia1
+  email: you@your-inst.edu   # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Vesicular disease differential panel (same clinical signs as FMDV):
+  #   svd.fasta           - swine vesicular disease virus (enterovirus, closest picornavirus)
+  #   vs_virus.fasta      - vesicular stomatitis virus (rhabdovirus)
+  #   csfv.fasta          - classical swine fever virus (pestivirus RNA)
+  #   bvdv.fasta          - bovine viral diarrhea virus (pestivirus)
+  #   bos_taurus_fragment.fasta  - host DNA from cattle blood/epithelial swab
+  #   sus_scrofa_fragment.fasta  - host DNA from pig samples
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- SVD is a picornavirus; cross-reactivity risk
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.30        # RNA-virus drift: slightly looser than bacteria
+  min_region_length: 200         # 3D gene is ~1800 nt -- plenty of conserved windows
+
+primer:
+  tm_min: 63.0                   # RT-LAMP one-step: co-activity floor for NEB RTx / AMV-RT
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/fmdv_3Dpol
+  top_n: 10
+  generate_html: true
+  generate_csv: true

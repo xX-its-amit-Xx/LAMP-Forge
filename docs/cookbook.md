@@ -1218,3 +1218,162 @@ plan = build_pool_plan(panel["selection"], params)
 write_pool_csv(plan, Path("results/souring_panel/pool_sheet.csv"))
 print(f"{plan.n_primers} primers, {plan.water_volume_ul:.1f} uL water")
 ```
+
+---
+
+## Recipe 14 — Foot-and-mouth disease virus (FMDV) via RT-LAMP (on-farm / checkpoint biosecurity)
+
+**Goal.** Detect FMDV broadly across all seven serotypes (O, A, C, SAT1, SAT2, SAT3, Asia1)
+from epithelial vesicular fluid, blood, nasal swab, or oral fluid — fast enough to justify
+immediate quarantine before suspect animals move.
+
+**Why it's interesting.** FMDV is the most economically damaging livestock disease on the
+planet: the 2001 UK outbreak cost an estimated GBP 8 billion and triggered the slaughter of
+>10 million animals.  It is a **positive-sense ssRNA** virus (*Picornaviridae*, *Aphthovirus*)
+— unlike ASFV, which is a large DNA virus (Recipe 7) — so detection requires **RT-LAMP**.
+One-step RT-LAMP (Bst 2.0 WarmStart + NEB RTx) at 63-65 degC delivers a yes/no result in
+under 30 minutes, compatible with a BioVind-style portable device at the farm gate or a
+border checkpoint.
+
+FMDV has **seven antigenically distinct serotypes** (O, A, C, SAT1, SAT2, SAT3, Asia1)
+sharing as little as 30% VP1 nucleotide identity across serotypes.  A pan-FMDV assay must
+target a conserved region.  The **3D RNA-dependent RNA polymerase** gene (~1800 nt) is the
+most conserved coding region across all serotypes and is the target of published RT-PCR and
+RT-LAMP FMDV assays (de Vries et al. 2010; Soltan et al. 2018).
+
+**Target.** 3D gene (RNA polymerase), pulling sequences spanning all seven serotypes.
+Use the ready-made config at `config/fmdv_3dpol.yaml`, or paste the block below:
+
+```yaml
+target:
+  name: fmdv_3Dpol
+  taxon_id: 12110          # Foot-and-mouth disease virus
+  gene: 3D                 # RNA polymerase; alt annotation: "3Dpol" / "RdRp"
+  max_sequences: 40        # span O, A, C, SAT1, SAT2, SAT3, Asia1
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- SVD is a picornavirus; cross-reactivity risk
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.30        # RNA-virus drift: slightly looser than bacteria
+  min_region_length: 200
+
+primer:
+  tm_min: 63.0                   # RT-LAMP one-step: co-activity floor for NEB RTx / AMV-RT
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/fmdv_3Dpol
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config note.** `primer.tm_min: 63.0` — same one-step RT-LAMP rationale as Recipes 11
+and 12 (PRRSV and AIV).  The `conservation.entropy_threshold: 0.30` is slightly looser than
+for bacterial targets — the 3D gene is under strong catalytic constraint but still subject to
+RNA-virus synonymous drift.
+
+**Off-target panel.** The critical differential is **vesicular disease** — four distinct
+diseases produce indistinguishable clinical signs (vesicles on feet, tongue, snout):
+
+| File | Source | Why |
+|---|---|---|
+| `svd.fasta` | swine vesicular disease virus *(representative)* | Vesicular lesions identical to FMDV in pigs; closest picornavirus in panel |
+| `vs_virus.fasta` | vesicular stomatitis virus *(representative)* | Same clinical picture; rhabdovirus (cattle, horses, pigs) |
+| `csfv.fasta` | classical swine fever virus *(representative)* | Co-circulates in pigs; RNA pestivirus |
+| `bvdv.fasta` | bovine viral diarrhea virus *(representative)* | Common bovine RNA pestivirus |
+| `bos_taurus_fragment.fasta` | Subset of ARS-UCD2.0 chr1 | Host DNA from cattle blood or epithelial swab |
+| `sus_scrofa_fragment.fasta` | Subset of *Sus scrofa* genome | Host DNA from pig samples |
+
+**Expected output.** The 3D gene has a well-documented conserved central block (~780-1200 nt
+of the 3D ORF relative to the O/Kaufbeuren reference).  Top-scoring sets should localise there,
+with zero flagged off-target hits — FMDV is genetically distant from CSFV and BVD (pestiviruses),
+VSV (rhabdovirus), and SVD (Enterovirus E).
+
+**Verify RT-LAMP readiness.**
+
+```bash
+lamp-forge rt-check \
+  --input results/fmdv_3Dpol/primer_sets.json \
+  --na-type rna \
+  --out-csv results/fmdv_3Dpol/rt_check.csv
+```
+
+Sets marked **NOT OPTIMIZED** have at least one core primer below 63.0 degC.  Because
+`primer.tm_min: 63.0` is already set in this config, re-running is usually not necessary
+— but verify before ordering.
+
+**Multiplex with other farm-biosecurity targets.** FMDV, ASFV, PRRSV, and AIV can co-occur
+in high-density livestock areas.  Design each target independently, then combine:
+
+```bash
+lamp-forge panel \
+  --set FMDV=results/fmdv_3Dpol/primer_sets.json \
+  --set ASFV=results/asfv_p72/primer_sets.json \
+  --set PRRSV=results/prrsv_ORF7/primer_sets.json \
+  --set IAV=results/influenza_a_M/primer_sets.json \
+  --top-per-target 5 \
+  --out results/farm_biosecurity_4plex
+```
+
+Then pool and export:
+
+```bash
+lamp-forge pool \
+  --panel results/farm_biosecurity_4plex/panel.json \
+  --stock-conc 200 \
+  --total-volume 500 \
+  --out results/farm_biosecurity_4plex/pool_sheet.csv
+
+lamp-forge export \
+  --input results/fmdv_3Dpol/primer_sets.json \
+  --format idt \
+  --target-label FMDV_3D \
+  --out orders/fmdv_idt_order.csv
+```
+
+**Estimate LOD before ordering** (nasal swab in 2 mL VTM, 50% RNA extraction, 100 uL eluate,
+5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 2000 \
+  --efficiency 0.50 \
+  --eluate-volume 100 \
+  --reaction-input 5
+```
+
+Effective sample = 2000 x 0.5 x (5/100) = 50 uL per reaction -> LOD_95 approx 60 copies/mL
+of VTM.  FMDV viral loads in epithelial vesicular fluid during the acute febrile phase can
+reach 10^8 copies/mL, so a 60 copies/mL LOD provides orders-of-magnitude headroom.
+
+**Field note.** FMDV is a WOAH-listed Tier 1 notifiable disease.  A positive result should
+trigger immediate notification to the national veterinary authority and confirmatory testing
+at a WOAH Reference Laboratory (e.g. Pirbright Institute, FAO World Reference Laboratory for
+FMD).  Position this assay as a **triage/screening** tool, not the confirmatory test.  Wet-lab
+validation must be performed at a certified facility using inactivated positive controls or
+synthetic RNA standards — the in silico design produced by this pipeline does not require
+BSL-2+ handling.
+
+**References.**
+
+- de Vries AAF et al. (2010) Real-time RT-LAMP for rapid, sensitive detection of FMDV
+  serotypes O, A and Asia 1. *J Virol Methods* 163:303-311.
+  doi:10.1016/j.jviromet.2009.09.029
+- Soltan MA et al. (2018) Loop-mediated isothermal amplification (LAMP) for rapid detection
+  of FMDV serotype O. *J Virol Methods* 251:6-10. doi:10.1016/j.jviromet.2017.10.003
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA. *Nucleic Acids Res*
+  28(12):e63. doi:10.1093/nar/28.12.e63
