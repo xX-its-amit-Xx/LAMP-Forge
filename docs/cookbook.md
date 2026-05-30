@@ -2397,3 +2397,146 @@ below the 10^3 cells/mL threshold at which oilfield MIC risk is actionable.
   doi:10.1073/pnas.74.11.5088
 - Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 20 — Time-to-positive estimation (`lamp-forge ttp`)
+
+**Goal.** Before ordering primers, confirm that a designed LAMP assay will
+turn positive within the device run window (30-60 min on BioVind BioID) for
+the expected copy count in a real field or clinical sample.
+
+**Why it matters for BioVind.** BioVind's BioID device has a fixed 30-60 min
+run window.  An assay that reads out in 62 min at the diagnostic threshold is
+clinically useless on that device — even if it is thermodynamically perfect.
+`lamp-forge ttp` surfaces this risk in silico, before a single primer is
+ordered.
+
+The model is the empirically validated linear log10 relationship between
+threshold time and initial copy count:
+
+    TTP(N) = TTP_1copy - slope × log10(N)
+
+Default parameters come from Bst 2.0 WarmStart at 65 °C (Tanner 2012,
+NEB E1700 manual):
+
+    TTP_1copy = 55 min   (conservative 95th-percentile single-molecule TTP)
+    slope     = 6 min/decade of copies
+
+---
+
+### 20a — SRB dsrB assay (oil and gas, DNA-LAMP)
+
+**Context.** The SRB assay from Recipe 6 targets dsrB, a single-copy gene.
+Produced-water samples contain ~10^3 to 10^6 SRB cells/mL.  After the
+standard extraction (1 mL sample, 50% efficiency, 100 uL eluate, 5 uL to
+reaction) this maps to 25-25 000 copies per reaction.  Verify all these
+copy counts yield TTP < 60 min:
+
+```bash
+lamp-forge ttp \
+  --preset dna-lamp \
+  --device-window 60 \
+  --copies-min 1 \
+  --copies-max 100000 \
+  --out-csv results/srb_dsrB/ttp_dna.csv
+```
+
+**Expected output (abridged):**
+
+```
+TTP model: preset=dna-lamp, TTP@1cp=55.0 min, slope=6.0 min/decade, min_TTP=10.0 min
+Device window: 60 min
+
+    Copies/rxn   TTP (min)   vs window
+------------------------------------------
+           1.0        55.0        PASS
+          10.0        49.0        PASS
+         100.0        43.0        PASS
+       1 000.0        37.0        PASS
+      10 000.0        31.0        PASS
+     100 000.0        25.0        PASS
+```
+
+All target copy counts are within the 60-min window.  The assay is safe to
+order for BioVind deployment.
+
+**LOD + TTP combined check (the standard pre-order workflow):**
+
+```bash
+# Step 1: LOD (what is the minimum detectable concentration in sample?)
+lamp-forge lod \
+  --sample-volume 1000 \
+  --efficiency 0.50 \
+  --eluate-volume 100 \
+  --reaction-input 5
+
+# Step 2: TTP (will the assay read out in time at that concentration?)
+lamp-forge ttp --preset dna-lamp --device-window 60
+```
+
+---
+
+### 20b — PRRSV ORF7 assay (farm biosecurity, RT-LAMP)
+
+**Context.** A PRRSV assay on an RNA target uses one-step RT-LAMP with NEB
+RTx reverse transcriptase and Bst 2.0 WarmStart at 63-65 °C.  The reverse-
+transcription lag adds ~5 min to TTP at low copy counts.  Use the `rt-lamp`
+preset:
+
+```bash
+lamp-forge ttp \
+  --preset rt-lamp \
+  --device-window 60 \
+  --copies-min 1 \
+  --copies-max 1000000 \
+  --out-csv results/prrsv_orf7/ttp_rtlamp.csv
+```
+
+**Expected output (abridged):**
+
+```
+TTP model: preset=rt-lamp, TTP@1cp=60.0 min, slope=6.0 min/decade, min_TTP=12.0 min
+Device window: 60 min
+
+    Copies/rxn   TTP (min)   vs window
+------------------------------------------
+           1.0        60.0        PASS
+          10.0        54.0        PASS
+         100.0        48.0        PASS
+```
+
+At 1 copy/reaction TTP equals the 60-min window exactly (borderline PASS).
+If the platform real run time is 55 min, tighten the primer Tm floor to
+63.5 °C in the config to speed the RT step and recheck.
+
+---
+
+### 20c — Custom chemistry parameters
+
+If you have measured TTP on your own kit from a calibration curve with
+synthetic template, override the defaults:
+
+```bash
+lamp-forge ttp \
+  --ttp-one-copy 48 \
+  --slope 5.5 \
+  --device-window 45 \
+  --copies-min 10 \
+  --copies-max 1000000 \
+  --out-csv results/custom_ttp.csv
+```
+
+---
+
+**References.**
+
+- Tanner NA, Zhang Y & Evans TC Jr (2012). Visual detection of isothermal
+  nucleic acid amplification using pH-sensitive dyes. *BioTechniques*
+  53(2):81-89. doi:10.2144/0000113902
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+- Dao Thi VL et al. (2020). A colorimetric RT-LAMP assay and LAMP-sequencing
+  for in-field diagnosis of SARS-CoV-2. *Science* 370(6518):914-917.
+  doi:10.1126/science.abc7075
+- NEB WarmStart(R) LAMP Kit protocol (E1700). New England Biolabs, 2023.

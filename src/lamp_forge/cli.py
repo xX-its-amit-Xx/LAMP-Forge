@@ -428,6 +428,173 @@ def lod(
         click.echo(f"\nLOD table written to {out_csv}")
 
 
+@cli.command(name="ttp")
+@click.option(
+    "--preset",
+    type=click.Choice(["dna-lamp", "rt-lamp", "fast-lamp"], case_sensitive=False),
+    default="dna-lamp",
+    show_default=True,
+    help=(
+        "Chemistry preset: 'dna-lamp' (Bst 2.0 WarmStart, 65 degC; default for bacterial "
+        "and DNA-virus assays), 'rt-lamp' (RTx + Bst 2.0, 63-65 degC; for RNA-target "
+        "assays such as PRRSV, FMDV, avian influenza), 'fast-lamp' (high enzyme loading, "
+        "early fluorescence). Overridden by --ttp-one-copy / --slope if both are given."
+    ),
+)
+@click.option(
+    "--ttp-one-copy",
+    "ttp_one_copy",
+    type=float,
+    default=None,
+    help=(
+        "TTP (minutes) at 1 copy per reaction. Overrides the preset value. "
+        "Typical range: 45-65 min depending on enzyme and temperature."
+    ),
+)
+@click.option(
+    "--slope",
+    "slope",
+    type=float,
+    default=None,
+    help=(
+        "TTP reduction (minutes) per 10-fold increase in copy count. "
+        "Overrides the preset value. Typical range: 4-8 min/decade."
+    ),
+)
+@click.option(
+    "--device-window",
+    "device_window",
+    type=float,
+    default=60.0,
+    show_default=True,
+    help=(
+        "Device run window in minutes. Results outside this window are flagged "
+        "as 'FAIL'. Default 60 min (BioVind BioID 30-60 min run)."
+    ),
+)
+@click.option(
+    "--copies-min",
+    "copies_min",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Minimum copies per reaction for the table (default 1).",
+)
+@click.option(
+    "--copies-max",
+    "copies_max",
+    type=float,
+    default=1e6,
+    show_default=True,
+    help="Maximum copies per reaction for the table (default 1e6).",
+)
+@click.option(
+    "--n-points",
+    "n_points",
+    type=int,
+    default=13,
+    show_default=True,
+    help=(
+        "Number of log-spaced evaluation points across the copy-count range. "
+        "Default 13 gives a half-decade step over 1-10^6."
+    ),
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the TTP table to a CSV file.",
+)
+def ttp(
+    preset: str,
+    ttp_one_copy: float | None,
+    slope: float | None,
+    device_window: float,
+    copies_min: float,
+    copies_max: float,
+    n_points: int,
+    out_csv: Path | None,
+) -> None:
+    r"""Estimate time-to-positive (TTP) across a copy-count range.
+
+    Predicts when a LAMP or RT-LAMP reaction will turn positive for a given
+    initial copy count using the empirically validated linear log10 model::
+
+        TTP(N) = ttp_one_copy_min - slope * log10(N)
+
+    Results are flagged PASS/FAIL against the device window (default 60 min
+    for BioVind BioID). Use this before ordering primers to confirm the assay
+    will read out within the device run time for the expected sample load.
+
+    \b
+    Examples:
+        # DNA-LAMP SRB assay, default 60-min window:
+        lamp-forge ttp --preset dna-lamp
+
+        # One-step RT-LAMP (PRRSV), 45-min window:
+        lamp-forge ttp --preset rt-lamp --device-window 45
+
+        # Custom parameters, export to CSV:
+        lamp-forge ttp --ttp-one-copy 58 --slope 5.5 --out-csv results/ttp.csv
+    """
+    from lamp_forge.ttp import TtpParams, TtpPreset, ttp_table, write_ttp_csv
+
+    preset_enum = TtpPreset(preset.lower())
+    base = TtpParams.from_preset(preset_enum, device_window_min=device_window)
+
+    ttp_one_val = ttp_one_copy if ttp_one_copy is not None else base.ttp_one_copy_min
+    slope_val = slope if slope is not None else base.slope_min_per_decade
+
+    try:
+        params = TtpParams(
+            ttp_one_copy_min=ttp_one_val,
+            slope_min_per_decade=slope_val,
+            device_window_min=device_window,
+            min_ttp_min=base.min_ttp_min,
+        )
+    except ValueError as exc:
+        click.secho(f"Parameter error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    try:
+        table = ttp_table(params, copies_range=(copies_min, copies_max), n_points=n_points)
+    except ValueError as exc:
+        click.secho(f"Range error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    click.echo(
+        f"TTP model: preset={preset.lower()}, "
+        f"TTP@1cp={params.ttp_one_copy_min:.1f} min, "
+        f"slope={params.slope_min_per_decade:.1f} min/decade, "
+        f"min_TTP={params.min_ttp_min:.1f} min"
+    )
+    click.echo(f"Device window: {params.device_window_min:.0f} min")
+    click.echo("")
+
+    header = f"{'Copies/rxn':>14}  {'TTP (min)':>10}  {'vs window':>10}"
+    click.echo(header)
+    click.echo("-" * len(header))
+    for pt in table.points:
+        status = "PASS" if pt.in_device_window else "FAIL"
+        click.echo(f"{pt.copies_per_reaction:>14.1f}  {pt.ttp_minutes:>10.1f}  {status:>10}")
+
+    if table.min_detectable_copies is not None:
+        click.echo(
+            f"\nMin detectable: {table.min_detectable_copies:.1f} copies/rxn "
+            f"=> TTP within {params.device_window_min:.0f} min"
+        )
+    else:
+        click.echo(
+            f"\nWARNING: no copy count in range [{copies_min:.0f}, "
+            f"{copies_max:.0f}] yields TTP within {params.device_window_min:.0f} min."
+        )
+
+    if out_csv is not None:
+        write_ttp_csv(table, out_csv)
+        click.echo(f"\nTTP table written to {out_csv}")
+
+
 @cli.command(name="export")
 @click.option(
     "--input",
