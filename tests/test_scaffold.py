@@ -247,11 +247,16 @@ class TestScaffoldCli:
             cli,
             [
                 "scaffold",
-                "--target-name", "prrsv_orf7",
-                "--vertical", "farm",
-                "--na-type", "rna",
-                "--taxon-id", "28344",
-                "--gene", "ORF7",
+                "--target-name",
+                "prrsv_orf7",
+                "--vertical",
+                "farm",
+                "--na-type",
+                "rna",
+                "--taxon-id",
+                "28344",
+                "--gene",
+                "ORF7",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -267,11 +272,16 @@ class TestScaffoldCli:
             cli,
             [
                 "scaffold",
-                "--target-name", "srb_dsrB",
-                "--vertical", "oil-gas",
-                "--taxon-id", "872",
-                "--gene", "dsrB",
-                "--out", str(out_path),
+                "--target-name",
+                "srb_dsrB",
+                "--vertical",
+                "oil-gas",
+                "--taxon-id",
+                "872",
+                "--gene",
+                "dsrB",
+                "--out",
+                str(out_path),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -311,8 +321,10 @@ class TestScaffoldCli:
             cli,
             [
                 "scaffold",
-                "--target-name", "big_panel",
-                "--max-sequences", "50",
+                "--target-name",
+                "big_panel",
+                "--max-sequences",
+                "50",
             ],
         )
         assert result.exit_code == 0, result.output

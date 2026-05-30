@@ -73,9 +73,7 @@ class TestNdvMGeneConfig:
         """
         assert ndv_cfg.taxon_id == 11234
 
-    def test_entropy_threshold_appropriate_for_rna_virus(
-        self, ndv_cfg: PipelineConfig
-    ) -> None:
+    def test_entropy_threshold_appropriate_for_rna_virus(self, ndv_cfg: PipelineConfig) -> None:
         """M-gene entropy threshold must reflect RNA-virus inter-genotype variability.
 
         The NDV M gene is under structural constraint (matrix-layer assembly),
@@ -110,9 +108,7 @@ class TestNdvMGeneConfig:
             "gc_max must be >= 55% to accommodate NDV genotypes with higher GC content"
         )
 
-    def test_gc_window_wide_enough_for_genotype_diversity(
-        self, ndv_cfg: PipelineConfig
-    ) -> None:
+    def test_gc_window_wide_enough_for_genotype_diversity(self, ndv_cfg: PipelineConfig) -> None:
         """GC window must span NDV inter-genotype GC diversity."""
         assert ndv_cfg.gc_max - ndv_cfg.gc_min >= 15.0, (
             "NDV genotypes span significant GC diversity; "

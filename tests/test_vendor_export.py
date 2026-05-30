@@ -906,9 +906,7 @@ class TestPanelExportCli:
         from lamp_forge.cli import cli
 
         panel_json = tmp_path / "panel.json"
-        panel_json.write_text(
-            json.dumps({"selection": [], "version": "0.1.0"}), encoding="utf-8"
-        )
+        panel_json.write_text(json.dumps({"selection": [], "version": "0.1.0"}), encoding="utf-8")
         runner = CliRunner()
         result = runner.invoke(
             cli,

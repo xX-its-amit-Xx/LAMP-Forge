@@ -122,12 +122,8 @@ _DEFAULTS: dict[tuple[Vertical, NaType], _VerticalDefaults] = {
         min_region_length=220,
         f2_b2_min=120,
         f2_b2_max=160,
-        entropy_note=(
-            "functional genes; loosen entropy to find windows in diverse genera"
-        ),
-        tm_note=(
-            "one-step RT-LAMP floor 63 degC for co-activity with NEB RTx / AMV-RT"
-        ),
+        entropy_note=("functional genes; loosen entropy to find windows in diverse genera"),
+        tm_note=("one-step RT-LAMP floor 63 degC for co-activity with NEB RTx / AMV-RT"),
     ),
     (Vertical.FARM, NaType.DNA): _VerticalDefaults(
         entropy_threshold=0.25,
@@ -141,9 +137,7 @@ _DEFAULTS: dict[tuple[Vertical, NaType], _VerticalDefaults] = {
         min_region_length=220,
         f2_b2_min=120,
         f2_b2_max=150,
-        entropy_note=(
-            "DNA virus target (e.g. ASFV); tight for well-conserved capsid genes"
-        ),
+        entropy_note=("DNA virus target (e.g. ASFV); tight for well-conserved capsid genes"),
         tm_note="standard LAMP; single incubation temperature 60-65 degC",
     ),
     (Vertical.FARM, NaType.RNA): _VerticalDefaults(
@@ -159,12 +153,10 @@ _DEFAULTS: dict[tuple[Vertical, NaType], _VerticalDefaults] = {
         f2_b2_min=120,
         f2_b2_max=150,
         entropy_note=(
-            "RNA virus (e.g. PRRSV/AIV/FMDV); loosen slightly for "
-            "synonymous drift across genotypes"
+            "RNA virus (e.g. PRRSV/AIV/FMDV); loosen slightly for synonymous drift across genotypes"
         ),
         tm_note=(
-            "one-step RT-LAMP floor 63 degC "
-            "(PRRSV / avian influenza / FMDV one-step protocol)"
+            "one-step RT-LAMP floor 63 degC (PRRSV / avian influenza / FMDV one-step protocol)"
         ),
     ),
     (Vertical.POC, NaType.DNA): _VerticalDefaults(
@@ -179,9 +171,7 @@ _DEFAULTS: dict[tuple[Vertical, NaType], _VerticalDefaults] = {
         min_region_length=220,
         f2_b2_min=120,
         f2_b2_max=160,
-        entropy_note=(
-            "clinical target; tight conservation for cross-isolate sensitivity"
-        ),
+        entropy_note=("clinical target; tight conservation for cross-isolate sensitivity"),
         tm_note="standard LAMP; single incubation temperature 60-65 degC",
     ),
     (Vertical.POC, NaType.RNA): _VerticalDefaults(

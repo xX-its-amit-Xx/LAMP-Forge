@@ -72,9 +72,7 @@ class TestUniversal16SConfig:
             "a narrower anchor will not confirm cross-phylum universality"
         )
 
-    def test_entropy_threshold_is_strict_for_universality(
-        self, s16_cfg: PipelineConfig
-    ) -> None:
+    def test_entropy_threshold_is_strict_for_universality(self, s16_cfg: PipelineConfig) -> None:
         """Entropy threshold must be unusually strict for universal primer placement.
 
         Unlike functional-gene markers (dsrB: 0.35, mcrA: 0.35, narG: 0.35),
@@ -93,9 +91,7 @@ class TestUniversal16SConfig:
             f"(got {s16_cfg.entropy_threshold}; compare dsrB/narG at 0.35)"
         )
 
-    def test_max_sequences_ensures_cross_phylum_diversity(
-        self, s16_cfg: PipelineConfig
-    ) -> None:
+    def test_max_sequences_ensures_cross_phylum_diversity(self, s16_cfg: PipelineConfig) -> None:
         """Enough sequences to sample major bacterial phyla.
 
         A universal 16S assay must be validated against Firmicutes,
@@ -140,9 +136,7 @@ class TestUniversal16SConfig:
             "16S conserved flanking regions (~45% GC)"
         )
 
-    def test_gc_max_accommodates_gc_rich_actinobacteria(
-        self, s16_cfg: PipelineConfig
-    ) -> None:
+    def test_gc_max_accommodates_gc_rich_actinobacteria(self, s16_cfg: PipelineConfig) -> None:
         """gc_max must accommodate GC-rich Actinobacteria in the 16S conserved regions.
 
         Actinobacteria 16S conserved flanking blocks can reach ~57% GC
@@ -171,9 +165,7 @@ class TestUniversal16SConfig:
     def test_output_dir_references_16s(self, s16_cfg: PipelineConfig) -> None:
         assert "16s" in str(s16_cfg.output_dir).lower()
 
-    def test_identity_threshold_is_tighter_than_standard(
-        self, s16_cfg: PipelineConfig
-    ) -> None:
+    def test_identity_threshold_is_tighter_than_standard(self, s16_cfg: PipelineConfig) -> None:
         """Off-target identity threshold must be tighter than the standard 0.80.
 
         The 16S rRNA gene has conserved secondary-structure motifs shared between

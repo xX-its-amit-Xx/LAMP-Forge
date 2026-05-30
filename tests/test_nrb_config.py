@@ -64,9 +64,7 @@ class TestNrbNarGConfig:
         """
         assert nrb_cfg.taxon_id == 265
 
-    def test_entropy_threshold_reflects_polyphyletic_marker(
-        self, nrb_cfg: PipelineConfig
-    ) -> None:
+    def test_entropy_threshold_reflects_polyphyletic_marker(self, nrb_cfg: PipelineConfig) -> None:
         """narG is a polyphyletic functional gene; threshold must be in the
         range used for comparable functional markers (dsrB: 0.35, mcrA: 0.35).
 
