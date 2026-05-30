@@ -1,0 +1,81 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: Methanogens -- oilfield souring & reservoir-gas monitoring
+#         via methyl-coenzyme M reductase alpha subunit (mcrA)
+#
+# Why this target: Methanogens are deeply polyphyletic archaea spanning
+# Methanobacteriales, Methanomicrobiales, Methanosarcinales, and
+# Methanopyrales.  mcrA is present in all methanogens and absent from
+# non-methanogens (Luton et al. 2002, Environ Microbiol 4:141-149) -- the
+# gold-standard functional marker for this guild.
+#
+# BioVind use-case: second channel of the oilfield souring 3-plex panel
+# (SRB dsrB + methanogen mcrA + universal 16S); see Recipe 10 and Recipe 8
+# in docs/cookbook.md.  Combine with config/srb_dsrB.yaml and run
+# lamp-forge panel to screen cross-assay compatibility before ordering.
+# High SRB + low methanogens = sulfidogenesis risk; high methanogens =
+# methanogenic corrosion and gas-quality concern.
+#
+# Key parameter notes:
+#   - conservation.entropy_threshold: 0.35 -- mcrA is under catalytic
+#     constraint but spans 5 archaeal orders with wide sequence diversity.
+#   - gc_min: 35.0 -- Archaea span a very wide GC range (30-65%); keep
+#     the window broad and let primer_design.py pick within-range windows.
+#   - Widen target.accessions with multi-genus mcrA CDS records covering
+#     Methanobacterium, Methanosarcina, Methanosaeta, Methanococcus,
+#     and Methanobrevibacter before running.
+#
+# Reference: Luton PE et al. (2002). The mcrA gene as an alternative to
+# 16S rRNA in the phylogenetic analysis of methanogen populations in
+# landfill. Microbiology 148:3521-3530.
+# ============================================================================
+
+target:
+  name: methanogen_mcrA
+  taxon_id: 2157             # Archaea domain -- anchor; widen with accessions
+  accessions:
+    # Curate mcrA CDS across genera for oilfield coverage.
+    # Pull mcrA for Methanobacterium thermoautotrophicum, Methanosarcina mazei,
+    # Methanosaeta concilii, Methanococcus jannaschii, Methanobrevibacter sp.
+    # from NCBI and list them here.  Leave empty [] for a taxon-driven test run.
+    []
+  gene: mcrA                 # methyl-coenzyme M reductase alpha subunit
+  max_sequences: 35          # span all five major methanogen orders
+  email: you@your-inst.edu   # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Key off-target members for an oilfield methanogen assay:
+  #   sulfolobus_acidocaldarius.fasta   - thermoacidophilic crenarchaeon; archaea
+  #                                       without mcrA -- confirms gene specificity
+  #   archaeoglobus_fulgidus.fasta      - sulfate-reducing archaeon; shares oilfield
+  #                                       niche with methanogens, no mcrA
+  #   desulfovibrio_vulgaris.fasta      - dominant SRB in oilfields; must NOT
+  #                                       co-flag in the mcrA channel
+  #   pseudomonas_aeruginosa.fasta      - ubiquitous oilfield bacterium
+  #   crude_oil_microbiome_mixed.fasta  - produced-water metagenome background
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.35        # mcrA: catalytic constraint, but order-level diversity
+  min_region_length: 220         # LAMP needs ~200 bp; 220 ensures margin for F3/B3
+
+primer:
+  tm_min: 60.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                   # Archaea span wide GC range; keep window broad
+  gc_max: 65.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/methanogen_mcrA
+  top_n: 10
+  generate_html: true
+  generate_csv: true

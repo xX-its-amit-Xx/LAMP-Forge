@@ -1,0 +1,80 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: Sulfate-reducing bacteria (SRB) — oilfield souring & MIC monitoring
+#         via the dissimilatory sulfite reductase beta-subunit gene (dsrB)
+#
+# Why this target: SRB are polyphyletic (Deltaproteobacteria, Firmicutes,
+# Thermodesulfobacteria, and Archaea) so species-level or 16S-based assays
+# miss large fractions of the guild.  dsrB is present in essentially all
+# sulfate-reducing organisms and is the accepted functional-gene marker for
+# SRB surveillance in oilfield produced water, pipeline biofilm, and pigging
+# solids.  It is the basis of qPCR souring-monitoring assays already deployed
+# commercially (e.g. Baker Hughes, Halliburton SRB kits).
+#
+# BioVind use-case: first channel of the oilfield souring 3-plex panel
+# (SRB dsrB + methanogen mcrA + universal 16S); see Recipe 6 and Recipe 8
+# in docs/cookbook.md.  Combine with config/methanogen_mcrA.yaml and run
+# lamp-forge panel to screen cross-assay compatibility before ordering.
+#
+# Key parameter notes:
+#   - conservation.entropy_threshold: 0.35 -- dsrB is under functional but
+#     not strict sequence constraint; use a looser threshold than for
+#     housekeeping genes.
+#   - target.max_sequences: 40 -- SRB diversity spans five phyla; sample
+#     broadly or the conserved windows will be dominated by Desulfovibrio.
+#   - Widen target.accessions with multi-genus dsrB CDS records from NCBI
+#     or FunGene (fungene.cme.msu.edu/dsrAB) before running.
+#
+# Specificity trap: sulfur-OXIDIZING bacteria (Chlorobium, Allochromatium)
+# carry a reverse-type dsrAB that is homologous to the SRB enzyme.  Include
+# reverse-dsr organisms in the off-target panel (see off_targets comment).
+# ============================================================================
+
+target:
+  name: srb_dsrB_oilfield
+  taxon_id: 872              # Desulfovibrio -- dominant oilfield SRB anchor genus
+  accessions:
+    # Curate a multi-genus dsrB set for true broad coverage.
+    # Pull dsrB CDS for Desulfovibrio, Desulfobacter, Desulfotomaculum,
+    # Desulfobulbus, and Archaeoglobus from NCBI/FunGene and list them here.
+    # Leave empty [] for a Desulfovibrio-only test run.
+    []
+  gene: dsrB                 # dissimilatory sulfite reductase beta subunit
+  max_sequences: 40          # sample SRB diversity broadly across genera
+  email: you@your-inst.edu   # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Key off-target members for an oilfield SRB assay:
+  #   chlorobium_tepidum_rdsr.fasta     - sulfur oxidizer with reverse-type dsrAB
+  #   allochromatium_vinosum_rdsr.fasta - purple sulfur bacterium, reverse-dsr
+  #   pseudomonas_aeruginosa.fasta      - ubiquitous non-SRB oilfield biofilm former
+  #   thauera_sp.fasta                  - nitrate-reducing bacterium (NRB); used
+  #                                       to out-compete SRB in souring control --
+  #                                       must NOT co-flag in an SRB assay
+  #   crude_oil_microbiome_mixed.fasta  - site metagenome background (best available)
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80   # standard; raise to 0.85 if reverse-dsr organisms flag
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.35        # dsrB: functional but not tight sequence conservation
+  min_region_length: 220         # LAMP needs ~200 bp; 220 ensures margin for F3/B3
+
+primer:
+  tm_min: 60.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0                   # broad; dsrB GC varies across genera (~45-60%)
+  gc_max: 65.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/srb_dsrB
+  top_n: 10
+  generate_html: true
+  generate_csv: true
