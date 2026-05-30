@@ -1,0 +1,84 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: Influenza A virus -- pan-subtype detection via the M-gene
+#         (matrix protein M1/M2, segment 7)
+#
+# Why this target: HPAI H5N1 clade 2.3.4.4b caused catastrophic poultry
+# losses across North America and Europe from 2021 onward with ongoing
+# spread into dairy cattle herds.  On-site detection using a BioVind-style
+# portable platform allows quarantine and culling decisions before the
+# virus spreads to adjacent houses.  The M-gene (segment 7) is the most
+# conserved genomic segment across all influenza A subtypes and is the
+# universal target of WHO-recommended influenza A molecular assays.
+#
+# Influenza A is a NEGATIVE-SENSE ssRNA virus, so detection requires
+# ONE-STEP RT-LAMP (Bst 2.0 WarmStart + NEB RTx) at 63-65 degC.
+# Sequences are deposited as cDNA in NCBI, so primer design proceeds
+# against the cDNA directly -- no special handling required.
+#
+# BioVind use-case: one channel of the on-farm biosecurity panel
+# (ASFV + PRRSV + AIV); see Recipe 12 and Recipe 14 in docs/cookbook.md.
+# Run lamp-forge rt-check after designing to confirm all sets meet the
+# one-step RT-LAMP Tm floor before ordering.
+#
+# Key parameter notes:
+#   - primer.tm_min: 63.0 -- one-step RT-LAMP co-activity floor for
+#     NEB RTx / AMV-RT.  Same rationale as prrsv_orf7.yaml.
+#   - conservation.entropy_threshold: 0.35 -- RNA-virus drift; the M-gene
+#     is the most conserved IAV segment but still accumulates synonymous
+#     variation across H1N1/H3N2/H5N1/H5N2/H7N9 backgrounds.
+#   - off_targets 0.85/0.85 -- influenza B segment 7 (~40% aa identity to
+#     IAV M1) is the closest non-target; tight thresholds needed.
+#   - Extend target.accessions with H5N1, H5N2, H7N9, H3N2, H1N1 M-gene
+#     sequences before running; taxon_id alone pulls a broad mix.
+# ============================================================================
+
+target:
+  name: influenza_a_M_gene
+  taxon_id: 11520            # Influenza A virus
+  accessions:
+    # Recommended additions: M-gene sequences for H5N1 (HPAI clade 2.3.4.4b),
+    # H5N2, H7N9, H3N2 (seasonal), H1N1 (2009 pdm) -- span at least 5
+    # subtypes to maximise conserved-window robustness.
+    []
+  gene: M                    # matrix protein; alt: "M segment" / "segment 7" / "MP"
+  max_sequences: 40          # span H5N1, H5N2, H7N9, H3N2, H1N1 for broad conservation
+  email: you@your-inst.edu   # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Respiratory co-pathogens and host background from oropharyngeal/cloacal swabs:
+  #   influenza_b_M.fasta            - IBV segment 7 (NC_002204.1); ~40% aa identity
+  #                                    to IAV M1 -- closest non-target, the specificity
+  #                                    acid test
+  #   newcastle_disease_virus.fasta  - NDV (avian paramyxovirus NC_002617.1);
+  #                                    co-circulates with HPAI in poultry
+  #   infectious_bronchitis_virus.fasta - IBrV (avian coronavirus NC_001451.1);
+  #                                    respiratory niche overlap
+  #   avian_metapneumovirus.fasta    - AMPV (NC_007652.1); co-circulates with HPAI
+  #   gallus_gallus_fragment.fasta   - host DNA from cloacal or oropharyngeal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- influenza B is a close non-target
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.35        # RNA-virus drift: looser than bacterial housekeeping genes
+  min_region_length: 200         # M-gene ~1027 nt; conserved central block at ~300-900 nt
+
+primer:
+  tm_min: 63.0                   # RT-LAMP one-step: co-activity floor for NEB RTx / AMV-RT
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                   # IAV M-gene ~40-50% GC
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/influenza_a_M
+  top_n: 10
+  generate_html: true
+  generate_csv: true

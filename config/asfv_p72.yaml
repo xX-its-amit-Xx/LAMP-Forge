@@ -1,0 +1,82 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: African swine fever virus (ASFV) -- pan-genotype detection via
+#         the p72 major capsid protein gene (B646L)
+#
+# Why this target: ASFV is the highest-consequence pig pathogen on the
+# planet: ~100% case fatality for virulent genotype II strains, no widely
+# deployed vaccine, and control that depends entirely on early detection
+# and culling.  It is a large DOUBLE-STRANDED DNA virus (Asfarviridae),
+# so unlike most farm-virus LAMP targets NO reverse transcription is
+# required -- making it an unusually clean isothermal, field-deployable
+# target.
+#
+# BioVind use-case: first channel of the on-farm biosecurity panel
+# (ASFV + PRRSV + AIV); see Recipe 7 and Recipes 12-14 in
+# docs/cookbook.md.  Design each target independently, then run
+# lamp-forge panel to screen cross-assay compatibility before ordering.
+#
+# Key parameter notes:
+#   - primer.tm_min: 60.0 -- DNA target; standard 60-65 degC LAMP window
+#     is correct.  Do NOT raise to 63.0 (the RT-LAMP floor); no RT enzyme
+#     is needed.
+#   - conservation.entropy_threshold: 0.25 -- B646L is well-conserved
+#     across genotypes; tighter than RNA-virus targets.
+#   - off_targets thresholds 0.85/0.85 -- must distinguish from CSF
+#     (classical swine fever, RNA pestivirus) and PCV2 (DNA circovirus).
+#   - Extend target.accessions with genotype I (Georgia/Caucasus lineage)
+#     and geographically diverse genotype II sequences for full coverage.
+#
+# Reference: Agueero M et al. (2003). An efficient BSL-1 PCR-based
+# method for the detection of ASFV using the p72 gene. J Virol Methods
+# 109:31-40. doi:10.1016/S0166-0934(03)00048-3
+# ============================================================================
+
+target:
+  name: asfv_p72
+  taxon_id: 10497            # African swine fever virus
+  accessions:
+    # Extend with genotype I (Caucasus/Georgia), genotype II (current
+    # Eurasian panzootic), and West African genotype sequences for
+    # representative pan-genotype coverage.
+    []
+  gene: B646L                # p72 major capsid protein; alt: "p72" / "major capsid protein"
+  max_sequences: 25          # span genotypes I and II at minimum
+  email: you@your-inst.edu   # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Swine-pathogen differential panel (same clinical niche as ASFV):
+  #   csfv.fasta              - classical swine fever virus (RNA pestivirus);
+  #                             the #1 clinical confounder (indistinguishable signs)
+  #   prrsv.fasta             - porcine reproductive & respiratory syndrome virus
+  #                             (RNA arterivirus); co-circulates in pigs
+  #   pcv2.fasta              - porcine circovirus 2 (DNA ssDNA virus);
+  #                             closest-DNA-genome background for swine assays
+  #   porcine_parvovirus.fasta - porcine parvovirus (ssDNA); common pig DNA virus
+  #   sus_scrofa_fragment.fasta - Sus scrofa host genome from blood or tissue
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- must distinguish from other swine viruses
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.25        # DNA virus; p72 is well-conserved across genotypes
+  min_region_length: 220         # LAMP needs ~200 bp; 220 ensures F3/B3 margin
+
+primer:
+  tm_min: 60.0                   # DNA target: standard LAMP, no RT enzyme required
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                   # ASFV GC ~38-40%
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/asfv_p72
+  top_n: 10
+  generate_html: true
+  generate_csv: true

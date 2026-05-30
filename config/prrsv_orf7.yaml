@@ -1,0 +1,84 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: Porcine reproductive and respiratory syndrome virus (PRRSV) --
+#         pan-genotype detection via the ORF7 nucleocapsid (N) protein gene
+#
+# Why this target: PRRSV is the most economically significant swine
+# pathogen in North America and Europe (~USD 664 M/yr in the US alone,
+# Holtkamp et al. 2013).  It is an RNA VIRUS (Arterivirus, positive-sense
+# ssRNA), so detection requires ONE-STEP RT-LAMP (Bst 2.0 WarmStart +
+# NEB RTx) at 63-65 degC -- a single tube, 30-minute result compatible
+# with a BioVind-style portable platform.
+#
+# PRRSV exists as two major genotypes: Type 1 (European, Lelystad lineage)
+# and Type 2 (North American; dominant in the US and Asia) sharing ~60%
+# nucleotide identity.  A pan-PRRSV assay must capture both -- the
+# max_sequences and accessions list should span both genotypes.
+#
+# BioVind use-case: one channel of the on-farm biosecurity panel
+# (ASFV + PRRSV + AIV); see Recipe 11 and Recipe 12 in docs/cookbook.md.
+# Run lamp-forge rt-check after designing to verify all primers meet the
+# RT-LAMP Tm floor before ordering.
+#
+# Key parameter notes:
+#   - primer.tm_min: 63.0 -- one-step RT-LAMP co-activity floor for NEB
+#     RTx / AMV-RT at 63-65 degC.  Primers below 63 degC reduce
+#     reverse-transcriptase activity when RT and Bst share the reaction.
+#   - conservation.entropy_threshold: 0.35 -- RNA viruses accumulate more
+#     synonymous drift than bacteria; use a looser threshold to capture
+#     conserved windows that are genuine functional constraints.
+#   - Extend target.accessions with Type 1 (Lelystad) and Type 2
+#     (VR-2332, MN184) sequences to build a truly pan-genotypic assay.
+#
+# Reference: Holtkamp DJ et al. (2013). Assessment of the economic impact
+# of porcine reproductive and respiratory syndrome virus on United States
+# pork producers. J Swine Health Prod 21:72-84.
+# ============================================================================
+
+target:
+  name: prrsv_ORF7
+  taxon_id: 28344            # Porcine reproductive and respiratory syndrome virus
+  accessions:
+    # Extend with Type 1 (Lelystad EF536003) and diverse Type 2 sequences
+    # (VR-2332 AY150564; MN184 DQ176020; contemporary US strains) to
+    # build a pan-genotypic conserved-window analysis.
+    []
+  gene: ORF7                 # nucleocapsid N protein; alt: "N protein" / "N" / "nucleocapsid"
+  max_sequences: 30          # span Type 1 + Type 2 + high-diversity strains
+  email: you@your-inst.edu   # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Porcine co-circulating pathogens and host background:
+  #   porcine_circovirus_2.fasta   - PCV2 (ubiquitous DNA ssDNA virus); no RT step
+  #                                   required -- must not co-flag with RNA PRRSV assay
+  #   csfv.fasta                   - classical swine fever virus (RNA pestivirus);
+  #                                   most likely RNA-background false-positive source
+  #   asfv_p72_fragment.fasta      - ASFV B646L region (DNA virus; for completeness)
+  #   porcine_parvovirus.fasta     - PPV (ssDNA; common swine DNA virus)
+  #   sus_scrofa_fragment.fasta    - Sus scrofa host RNA/DNA background from nasal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.35        # RNA virus drift: looser than bacterial housekeeping genes
+  min_region_length: 200         # ORF7 is ~375 nt; expect 1-3 viable LAMP windows
+
+primer:
+  tm_min: 63.0                   # RT-LAMP one-step: co-activity floor for NEB RTx / AMV-RT
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                   # PRRSV is GC-moderate (~50-55%)
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/prrsv_ORF7
+  top_n: 10
+  generate_html: true
+  generate_csv: true

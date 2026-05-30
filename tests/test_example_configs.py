@@ -19,7 +19,7 @@ CONFIG_DIR = Path(__file__).parent.parent / "config"
 _YAML_CONFIGS = sorted(CONFIG_DIR.glob("*.yaml"))
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
     "config_path",
     _YAML_CONFIGS,
     ids=[p.stem for p in _YAML_CONFIGS],
@@ -47,7 +47,7 @@ def test_example_config_parses(
 class TestFmdvConfig:
     """Specific semantic checks for the FMDV RT-LAMP config."""
 
-    @pytest.fixture
+    @pytest.fixture  # type: ignore[untyped-decorator]
     def fmdv_cfg(self, monkeypatch: pytest.MonkeyPatch) -> PipelineConfig:
         monkeypatch.setenv("NCBI_EMAIL", "ci@lamp-forge.example")
         return load_config(CONFIG_DIR / "fmdv_3dpol.yaml")
@@ -95,7 +95,7 @@ class TestSrbDsrBConfig:
     than single-genus housekeeping-gene targets.
     """
 
-    @pytest.fixture
+    @pytest.fixture  # type: ignore[untyped-decorator]
     def srb_cfg(self, monkeypatch: pytest.MonkeyPatch) -> PipelineConfig:
         monkeypatch.setenv("NCBI_EMAIL", "ci@lamp-forge.example")
         return load_config(CONFIG_DIR / "srb_dsrB.yaml")
@@ -143,7 +143,7 @@ class TestMethanogenMcrAConfig:
     and relaxed entropy thresholds compared to bacterial housekeeping genes.
     """
 
-    @pytest.fixture
+    @pytest.fixture  # type: ignore[untyped-decorator]
     def mcra_cfg(self, monkeypatch: pytest.MonkeyPatch) -> PipelineConfig:
         monkeypatch.setenv("NCBI_EMAIL", "ci@lamp-forge.example")
         return load_config(CONFIG_DIR / "methanogen_mcrA.yaml")
@@ -186,3 +186,155 @@ class TestMethanogenMcrAConfig:
 
     def test_output_dir_references_methanogen(self, mcra_cfg: PipelineConfig) -> None:
         assert "methanogen" in str(mcra_cfg.output_dir).lower()
+
+
+class TestAsfvP72Config:
+    """Semantic checks for the ASFV p72 on-farm biosecurity config.
+
+    ASFV is a large dsDNA virus (Asfarviridae) requiring NO reverse
+    transcription -- unlike the RNA-virus farm targets (PRRSV, AIV).
+    The p72 (B646L) major capsid protein is the WOAH/OIE-referenced
+    PCR marker and is well-conserved across genotypes I and II.
+    """
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def asfv_cfg(self, monkeypatch: pytest.MonkeyPatch) -> PipelineConfig:
+        monkeypatch.setenv("NCBI_EMAIL", "ci@lamp-forge.example")
+        return load_config(CONFIG_DIR / "asfv_p72.yaml")
+
+    def test_target_name(self, asfv_cfg: PipelineConfig) -> None:
+        assert asfv_cfg.target_name == "asfv_p72"
+
+    def test_taxon_id_is_asfv(self, asfv_cfg: PipelineConfig) -> None:
+        assert asfv_cfg.taxon_id == 10497
+
+    def test_gene_is_b646l(self, asfv_cfg: PipelineConfig) -> None:
+        assert asfv_cfg.gene == "B646L"
+
+    def test_standard_lamp_tm_not_rt_lamp(self, asfv_cfg: PipelineConfig) -> None:
+        """ASFV is a dsDNA target: tm_min must be at the standard LAMP floor, not the RT-LAMP floor."""
+        assert asfv_cfg.tm_min >= 60.0
+        assert asfv_cfg.tm_min < 63.5, (
+            "ASFV is a DNA target: tm_min should be 60.0 (standard LAMP), "
+            "not the RT-LAMP co-activity floor of 63 degC"
+        )
+        assert asfv_cfg.tm_max <= 65.0
+
+    def test_specificity_thresholds_are_tight(self, asfv_cfg: PipelineConfig) -> None:
+        """Must distinguish from CSFV and PCV2; use tight thresholds."""
+        assert asfv_cfg.min_identity_threshold >= 0.85
+        assert asfv_cfg.min_coverage_threshold >= 0.85
+
+    def test_entropy_threshold_reflects_dna_conservation(self, asfv_cfg: PipelineConfig) -> None:
+        """p72 is conserved in a dsDNA virus; entropy threshold should be tighter than RNA-virus targets."""
+        assert asfv_cfg.entropy_threshold <= 0.30, (
+            "B646L/p72 is conserved across ASFV genotypes (dsDNA virus); "
+            "entropy_threshold should be <= 0.30"
+        )
+
+    def test_max_sequences_spans_genotypes(self, asfv_cfg: PipelineConfig) -> None:
+        """Must span at least genotypes I and II."""
+        assert asfv_cfg.max_sequences >= 20
+
+    def test_amplicon_size_within_lamp_window(self, asfv_cfg: PipelineConfig) -> None:
+        assert 80 <= asfv_cfg.f2_b2_min < asfv_cfg.f2_b2_max <= 200
+
+    def test_output_dir_references_asfv(self, asfv_cfg: PipelineConfig) -> None:
+        assert "asfv" in str(asfv_cfg.output_dir).lower()
+
+
+class TestPrrsvOrf7Config:
+    """Semantic checks for the PRRSV ORF7 on-farm biosecurity config.
+
+    PRRSV is an RNA arterivirus requiring one-step RT-LAMP at 63-65 degC.
+    The ORF7 nucleocapsid N gene is the most conserved ORF across Type 1
+    (European) and Type 2 (North American) genotypes.
+    """
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def prrsv_cfg(self, monkeypatch: pytest.MonkeyPatch) -> PipelineConfig:
+        monkeypatch.setenv("NCBI_EMAIL", "ci@lamp-forge.example")
+        return load_config(CONFIG_DIR / "prrsv_orf7.yaml")
+
+    def test_target_name(self, prrsv_cfg: PipelineConfig) -> None:
+        assert prrsv_cfg.target_name == "prrsv_ORF7"
+
+    def test_taxon_id_is_prrsv(self, prrsv_cfg: PipelineConfig) -> None:
+        assert prrsv_cfg.taxon_id == 28344
+
+    def test_gene_is_orf7(self, prrsv_cfg: PipelineConfig) -> None:
+        assert prrsv_cfg.gene == "ORF7"
+
+    def test_rt_lamp_tm_floor(self, prrsv_cfg: PipelineConfig) -> None:
+        """PRRSV is an RNA target: tm_min must be >= 63.0 for one-step RT-LAMP co-activity."""
+        assert prrsv_cfg.tm_min >= 63.0, (
+            "PRRSV is an RNA target: tm_min must be >= 63.0 for one-step RT-LAMP "
+            "co-activity with NEB RTx at 63-65 degC"
+        )
+        assert prrsv_cfg.tm_max <= 65.0
+
+    def test_entropy_threshold_allows_rna_virus_drift(self, prrsv_cfg: PipelineConfig) -> None:
+        """RNA viruses accumulate more synonymous drift; entropy threshold should be >= 0.25."""
+        assert prrsv_cfg.entropy_threshold >= 0.25
+
+    def test_max_sequences_spans_both_genotypes(self, prrsv_cfg: PipelineConfig) -> None:
+        """Must span Type 1 (European) and Type 2 (North American) PRRSV genotypes."""
+        assert prrsv_cfg.max_sequences >= 25
+
+    def test_amplicon_size_within_lamp_window(self, prrsv_cfg: PipelineConfig) -> None:
+        assert 80 <= prrsv_cfg.f2_b2_min < prrsv_cfg.f2_b2_max <= 200
+
+    def test_output_dir_references_prrsv(self, prrsv_cfg: PipelineConfig) -> None:
+        assert "prrsv" in str(prrsv_cfg.output_dir).lower()
+
+
+class TestInfluenzaAMGeneConfig:
+    """Semantic checks for the Influenza A M-gene on-farm biosecurity config.
+
+    IAV is a negative-sense ssRNA virus requiring one-step RT-LAMP at
+    63-65 degC.  The M-gene (segment 7) is the most conserved IAV segment
+    and the universal target of WHO-recommended influenza A assays.
+    Influenza B segment 7 (~40% aa identity to IAV M1) is the closest
+    non-target -- specificity thresholds must be tight.
+    """
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def iav_cfg(self, monkeypatch: pytest.MonkeyPatch) -> PipelineConfig:
+        monkeypatch.setenv("NCBI_EMAIL", "ci@lamp-forge.example")
+        return load_config(CONFIG_DIR / "influenza_a_M.yaml")
+
+    def test_target_name(self, iav_cfg: PipelineConfig) -> None:
+        assert iav_cfg.target_name == "influenza_a_M_gene"
+
+    def test_taxon_id_is_influenza_a(self, iav_cfg: PipelineConfig) -> None:
+        assert iav_cfg.taxon_id == 11520
+
+    def test_gene_is_m(self, iav_cfg: PipelineConfig) -> None:
+        assert iav_cfg.gene == "M"
+
+    def test_rt_lamp_tm_floor(self, iav_cfg: PipelineConfig) -> None:
+        """IAV is an RNA target: tm_min must be >= 63.0 for one-step RT-LAMP co-activity."""
+        assert iav_cfg.tm_min >= 63.0, (
+            "Influenza A is an RNA target: tm_min must be >= 63.0 for one-step "
+            "RT-LAMP co-activity with NEB RTx at 63-65 degC"
+        )
+        assert iav_cfg.tm_max <= 65.0
+
+    def test_specificity_thresholds_are_tight(self, iav_cfg: PipelineConfig) -> None:
+        """Influenza B is the closest non-target; tight specificity thresholds required."""
+        assert iav_cfg.min_identity_threshold >= 0.85
+        assert iav_cfg.min_coverage_threshold >= 0.85
+
+    def test_entropy_threshold_allows_rna_virus_drift(self, iav_cfg: PipelineConfig) -> None:
+        """IAV M-gene accumulates synonymous drift across subtypes; threshold must be >= 0.25."""
+        assert iav_cfg.entropy_threshold >= 0.25
+
+    def test_max_sequences_spans_multiple_subtypes(self, iav_cfg: PipelineConfig) -> None:
+        """Must span H5N1, H5N2, H7N9, H3N2, H1N1 for a robust pan-subtype conserved window."""
+        assert iav_cfg.max_sequences >= 35
+
+    def test_amplicon_size_within_lamp_window(self, iav_cfg: PipelineConfig) -> None:
+        assert 80 <= iav_cfg.f2_b2_min < iav_cfg.f2_b2_max <= 200
+
+    def test_output_dir_references_influenza(self, iav_cfg: PipelineConfig) -> None:
+        assert "influenza" in str(iav_cfg.output_dir).lower()
