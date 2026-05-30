@@ -877,6 +877,131 @@ def validate(config_path: Path, skip_dir_check: bool) -> None:
         click.echo("  No warnings.")
 
 
+@cli.command(name="scaffold")
+@click.option(
+    "--target-name",
+    "target_name",
+    required=True,
+    help=(
+        "Short identifier for the target "
+        "(e.g. 'prrsv_orf7', 'srb_dsrB'). Used in target.name and output paths."
+    ),
+)
+@click.option(
+    "--vertical",
+    type=click.Choice(["oil-gas", "farm", "poc", "generic"], case_sensitive=False),
+    default="generic",
+    show_default=True,
+    help=(
+        "Deployment vertical: 'oil-gas' (MIC/souring), 'farm' (animal biosecurity), "
+        "'poc' (human point-of-care), 'generic' (neutral defaults)."
+    ),
+)
+@click.option(
+    "--na-type",
+    "na_type",
+    type=click.Choice(["dna", "rna"], case_sensitive=False),
+    default="dna",
+    show_default=True,
+    help=(
+        "Target nucleic-acid type. 'rna' raises the primer Tm floor to 63 degC "
+        "for one-step RT-LAMP co-activity."
+    ),
+)
+@click.option(
+    "--taxon-id",
+    "taxon_id",
+    type=int,
+    default=None,
+    help="NCBI taxonomy ID for the target organism (e.g. 28344 for PRRSV).",
+)
+@click.option(
+    "--gene",
+    default=None,
+    help="Target gene name as annotated in NCBI records (e.g. 'ORF7', 'dsrB').",
+)
+@click.option(
+    "--email",
+    default="your-email@institution.edu",
+    show_default=True,
+    help="NCBI courtesy email written into the config.",
+)
+@click.option(
+    "--max-sequences",
+    "max_sequences",
+    type=int,
+    default=None,
+    help="Override the vertical default maximum sequence count.",
+)
+@click.option(
+    "--out",
+    "out_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=(
+        "Output YAML path. Omit to print to stdout "
+        "(useful for piping: lamp-forge scaffold ... | less)."
+    ),
+)
+def scaffold(
+    target_name: str,
+    vertical: str,
+    na_type: str,
+    taxon_id: int | None,
+    gene: str | None,
+    email: str,
+    max_sequences: int | None,
+    out_path: Path | None,
+) -> None:
+    r"""Generate a starter YAML config with vertical-appropriate defaults.
+
+    Prints a ready-to-edit LAMP-Forge config pre-populated with
+    parameter choices tuned to the selected deployment vertical and
+    target nucleic-acid type.  Edit the placeholder email and taxon_id,
+    drop off-target FASTAs into input/off_targets/, then validate and run.
+
+    \b
+    Example -- farm RNA virus (PRRSV):
+        lamp-forge scaffold \\
+          --target-name prrsv_orf7 \\
+          --vertical farm \\
+          --na-type rna \\
+          --taxon-id 28344 \\
+          --gene ORF7 \\
+          --out config/prrsv_orf7.yaml
+
+    \b
+    Example -- oilfield MIC (SRB dsrB):
+        lamp-forge scaffold \\
+          --target-name srb_dsrB \\
+          --vertical oil-gas \\
+          --taxon-id 872 \\
+          --gene dsrB \\
+          --out config/srb_dsrB_new.yaml
+    """
+    from lamp_forge.scaffold import NaType as ScNaType
+    from lamp_forge.scaffold import ScaffoldParams, scaffold_yaml, write_scaffold
+    from lamp_forge.scaffold import Vertical as ScVertical
+
+    params = ScaffoldParams(
+        target_name=target_name,
+        vertical=ScVertical(vertical.lower()),
+        na_type=ScNaType(na_type.lower()),
+        taxon_id=taxon_id,
+        gene=gene,
+        email=email,
+        max_sequences=max_sequences,
+    )
+
+    if out_path is None:
+        click.echo(scaffold_yaml(params), nl=False)
+    else:
+        write_scaffold(params, out_path)
+        click.secho(f"Scaffold written to {out_path}", fg="green")
+        click.echo("Next: edit target.email and target.taxon_id, then run:")
+        click.echo(f"  lamp-forge validate --config {out_path}")
+
+
 @cli.command(name="version")
 def version() -> None:
     """Print version and exit."""
