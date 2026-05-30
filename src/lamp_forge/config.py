@@ -134,3 +134,80 @@ def load_config(path: str | Path) -> PipelineConfig:
         generate_csv=bool(output.get("generate_csv", True)),
         cache_dir=Path(os.environ.get("LAMP_FORGE_CACHE", "cache")),
     )
+
+
+def check_config_warnings(
+    config: PipelineConfig,
+    *,
+    check_dirs: bool = True,
+) -> list[str]:
+    """Return a list of soft-warning strings for a validated config.
+
+    These are not hard errors (``load_config`` already enforces those) but
+    common parameter choices that often indicate a misconfiguration or that
+    will produce suboptimal designs.  Returns an empty list when the config
+    looks reasonable.
+
+    Args:
+        config: A :class:`~lamp_forge.types.PipelineConfig` already returned
+            by :func:`load_config`.
+        check_dirs: When *True* (default), warn if the off-target FASTA
+            directory does not exist on the filesystem.
+
+    Returns:
+        A (possibly empty) list of human-readable warning strings, each
+        beginning with a short tag such as ``[off_targets]`` or ``[primer]``.
+    """
+    warnings: list[str] = []
+
+    if check_dirs and not config.off_target_dir.exists():
+        warnings.append(
+            f"[off_targets] fasta_dir '{config.off_target_dir}' does not exist "
+            f"-- the pipeline will fail when it tries to build the BLAST database"
+        )
+
+    if config.entropy_threshold < 0.08:
+        warnings.append(
+            f"[conservation] entropy_threshold {config.entropy_threshold:.3f} bits is very "
+            f"tight; most targets produce no conserved regions below 0.08 bits"
+        )
+    elif config.entropy_threshold > 0.50:
+        warnings.append(
+            f"[conservation] entropy_threshold {config.entropy_threshold:.3f} bits is very "
+            f"loose; may include poorly-conserved positions -- consider <= 0.40 bits for "
+            f"broad assay inclusivity"
+        )
+
+    if config.max_sequences < 5:
+        warnings.append(
+            f"[target] max_sequences={config.max_sequences} is very low; conservation "
+            f"analysis needs >= 5 sequences to be meaningful -- increase to at least 10"
+        )
+
+    if config.tm_min < 58.0:
+        warnings.append(
+            f"[primer] tm_min={config.tm_min:.1f} degC is below the practical LAMP floor "
+            f"(~58 degC); Bst polymerase strand-displacement activity drops sharply below "
+            f"this temperature"
+        )
+    if config.tm_max > 72.0:
+        warnings.append(
+            f"[primer] tm_max={config.tm_max:.1f} degC is above 72 degC; primers this hot "
+            f"are difficult to design in the GC-range specified and may mis-prime on "
+            f"secondary structures"
+        )
+
+    if config.top_n > 50:
+        warnings.append(
+            f"[output] top_n={config.top_n} is very large; consider <= 20 to keep the "
+            f"HTML report navigable"
+        )
+
+    if config.min_identity_threshold < 0.70:
+        warnings.append(
+            f"[off_targets] min_identity_threshold={config.min_identity_threshold:.2f} is "
+            f"below 70%; at this level, near-random nucleotide matches will be flagged as "
+            f"cross-reactive -- consider >= 0.75"
+        )
+
+    return warnings

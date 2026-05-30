@@ -803,6 +803,88 @@ def pool(
     )
 
 
+@cli.command(name="validate")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Path to the YAML pipeline config to validate.",
+)
+@click.option(
+    "--no-check-dirs",
+    "skip_dir_check",
+    is_flag=True,
+    default=False,
+    help="Skip filesystem checks (off-target directory existence). Useful in CI.",
+)
+def validate(config_path: Path, skip_dir_check: bool) -> None:
+    r"""Validate a LAMP-Forge YAML config without running the pipeline.
+
+    Loads and validates the config (the same checks run by ``lamp-forge run``),
+    prints a structured summary, and reports soft warnings for parameter choices
+    that are valid but likely suboptimal.
+
+    Exits 0 if the config is valid (warnings do not change the exit code).
+    Exits 2 on a hard config error.
+
+    \b
+    Example:
+        lamp-forge validate --config config/srb_dsrB.yaml
+    """
+    from lamp_forge.config import ConfigError, check_config_warnings, load_config
+
+    try:
+        config = load_config(config_path)
+    except ConfigError as e:
+        click.secho(f"Config error: {e}", fg="red", err=True)
+        sys.exit(2)
+
+    # Source description
+    if config.taxon_id and config.accessions:
+        source = f"taxon_id {config.taxon_id} + {len(config.accessions)} accession(s)"
+    elif config.taxon_id:
+        source = f"taxon_id {config.taxon_id}"
+    else:
+        source = f"{len(config.accessions)} explicit accession(s)"
+    gene_label = config.gene if config.gene else "(whole genome / accession)"
+
+    click.secho(f"Config OK -- {config.target_name}", fg="green")
+    click.echo(f"  Target:        {config.target_name}")
+    click.echo(f"  Source:        {source}, gene={gene_label}, max {config.max_sequences} sequences")
+    click.echo(
+        f"  Off-target:    {config.off_target_dir} "
+        f"(identity >={config.min_identity_threshold:.0%}, "
+        f"coverage >={config.min_coverage_threshold:.0%})"
+    )
+    click.echo(
+        f"  Conservation:  window={config.window_size}, "
+        f"entropy<={config.entropy_threshold} bits, "
+        f"min region {config.min_region_length}bp"
+    )
+    click.echo(
+        f"  Primers:       Tm {config.tm_min:.1f}-{config.tm_max:.1f} degC "
+        f"(tolerance {config.tm_match_tolerance:.1f}), "
+        f"GC {config.gc_min:.0f}-{config.gc_max:.0f}%, "
+        f"amplicon {config.f2_b2_min}-{config.f2_b2_max}bp"
+    )
+    click.echo(
+        f"  Output:        {config.output_dir}, "
+        f"top {config.top_n} sets, "
+        f"HTML={'yes' if config.generate_html else 'no'}, "
+        f"CSV={'yes' if config.generate_csv else 'no'}"
+    )
+
+    soft_warnings = check_config_warnings(config, check_dirs=not skip_dir_check)
+    if soft_warnings:
+        click.echo("")
+        click.secho(f"Warnings ({len(soft_warnings)}):", fg="yellow")
+        for w in soft_warnings:
+            click.secho(f"  {w}", fg="yellow")
+    else:
+        click.echo("  No warnings.")
+
+
 @cli.command(name="version")
 def version() -> None:
     """Print version and exit."""
