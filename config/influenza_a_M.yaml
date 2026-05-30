@@ -1,0 +1,61 @@
+# LAMP-Forge config: Influenza A virus M-gene (avian influenza A, pan-subtype)
+# ============================================================================
+# Target: Universal influenza A detection via segment 7 (M-gene, matrix protein)
+# Why this target: HPAI H5N1 clade 2.3.4.4b caused catastrophic losses in
+# poultry across North America and Europe from 2021 onward, with ongoing spread
+# into dairy cattle herds.  The M-gene (segment 7) encodes matrix proteins M1/M2
+# and is the most conserved genomic segment across all influenza A subtypes --
+# the basis of all WHO-recommended universal influenza A molecular assays.
+#
+# This assay detects any influenza A subtype (H5, H7, H3, H1 etc.); for
+# subtype resolution, run a second design targeting the HA gene.  Sequence
+# the input set to span at least H5N1, H5N2, H7N9, H3N2, and H1N1 so the
+# conserved central M-gene block (~300-900 nt) is captured.
+#
+# Influenza A is a negative-sense ssRNA virus; detection requires RT-LAMP.
+# One-step RT-LAMP at 63-65 degC, compatible with BioVind portable platforms.
+#
+# After designing, verify RT-LAMP readiness before ordering:
+#   lamp-forge rt-check --input results/influenza_a_M/primer_sets.json --na-type rna
+# ============================================================================
+
+target:
+  name: influenza_a_M_gene
+  taxon_id: 11520              # Influenza A virus
+  gene: M                      # matrix protein; alt: "M segment" / "segment 7"
+  max_sequences: 40            # span H5N1, H5N2, H7N9, H3N2, H1N1 for broad conservation
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Respiratory co-circulating pathogens + host background from oropharyngeal swab:
+  #   influenza_b_M.fasta             - NC_002204.1; closest non-target (~40% aa to IAV M1)
+  #   newcastle_disease_virus.fasta   - NC_002617.1; avian paramyxovirus
+  #   infectious_bronchitis_virus.fasta - NC_001451.1; avian coronavirus
+  #   avian_metapneumovirus.fasta     - NC_007652.1; AMPV, respiratory, co-circulates
+  #   gallus_gallus_fragment.fasta    - GalGal6 chr1 subset; host DNA from cloacal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- influenza B is the closest non-target
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.35        # RNA viruses vary more than bacteria; loosen slightly
+  min_region_length: 200         # M-gene is ~1027 nt; conserved central block ~600 nt
+
+primer:
+  tm_min: 63.0                   # RT-LAMP one-step: co-activity floor for NEB RTx / AMV-RT
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/influenza_a_M
+  top_n: 10
+  generate_html: true
+  generate_csv: true

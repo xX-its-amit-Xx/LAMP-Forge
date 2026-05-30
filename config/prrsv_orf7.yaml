@@ -1,0 +1,57 @@
+# LAMP-Forge config: PRRSV ORF7 (porcine reproductive and respiratory syndrome virus)
+# ============================================================================
+# Target: PRRSV pan-genotype detection via ORF7 (nucleocapsid protein N)
+# Why this target: PRRSV is the most economically significant swine pathogen
+# in North America and Europe (~USD 664 M/yr in the US; Holtkamp et al. 2013).
+# ORF7 encodes the highly conserved nucleocapsid protein N and is the basis of
+# published PRRSV RT-PCR and RT-LAMP assays.  The two major genotypes -- Type 1
+# (European, Lelystad) and Type 2 (North American) -- share ~60% nt identity,
+# so the sequence set must span both to yield a pan-PRRSV conserved window.
+#
+# PRRSV is a positive-sense ssRNA virus (Arterivirus); detection requires
+# RT-LAMP.  One-step RT-LAMP (Bst 2.0 WarmStart + NEB RTx) at 63-65 degC
+# gives a result in under 30 minutes, compatible with BioVind portable platforms.
+#
+# After designing, verify RT-LAMP readiness before ordering:
+#   lamp-forge rt-check --input results/prrsv_ORF7/primer_sets.json --na-type rna
+# ============================================================================
+
+target:
+  name: prrsv_ORF7
+  taxon_id: 28344              # Porcine reproductive and respiratory syndrome virus
+  gene: ORF7                   # nucleocapsid protein N; alt: "N protein" / "N"
+  max_sequences: 30            # span Type 1 + Type 2 + high-diversity strains
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Porcine viruses that co-circulate and host background from nasal swab:
+  #   porcine_circovirus_2.fasta - NC_005148.1; ubiquitous swine DNA virus
+  #   csfv.fasta                 - classical swine fever virus (RNA pestivirus)
+  #   porcine_parvovirus.fasta   - NC_001718.1; common swine DNA virus
+  #   sus_scrofa_fragment.fasta  - Sus scrofa host DNA from nasal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.35   # RNA viruses vary more; loosen slightly for genotype diversity
+  min_region_length: 200    # ORF7 is ~375 nt -- expect 1-3 conserved windows
+
+primer:
+  tm_min: 63.0              # RT-LAMP one-step: co-activity floor for NEB RTx / AMV-RT
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0              # PRRSV is GC-moderate (~50-55%)
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/prrsv_ORF7
+  top_n: 10
+  generate_html: true
+  generate_csv: true

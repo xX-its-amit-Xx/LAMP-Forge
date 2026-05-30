@@ -1,0 +1,59 @@
+# LAMP-Forge config: African swine fever virus (ASFV) p72 capsid
+# ============================================================================
+# Target: ASFV pan-genotype detection via B646L gene (p72 major capsid protein)
+# Why this target: ASFV is the highest-consequence pig pathogen in the world:
+# ~100% case fatality for virulent genotype II strains, no widely deployed
+# vaccine, and control relying entirely on early detection and culling.  B646L
+# (p72) is the WOAH/OIE-referenced PCR target, well-conserved across all 24
+# genotypes, and the basis of published ASFV LAMP assays.
+#
+# ASFV is a large double-stranded DNA virus (Asfarviridae) -- unlike most farm
+# virus targets it needs NO reverse transcription, making it an unusually clean
+# LAMP target.  Standard LAMP at 60-65 degC on a portable platform gives a
+# quarantine-decision result in under 60 minutes.
+#
+# Clinical picture: high fever + hemorrhage overlaps classical swine fever
+# (CSFV).  This assay distinguishes the two; position as a triage/screening
+# tool, not the confirmatory test (WOAH reference lab confirmation required).
+# ============================================================================
+
+target:
+  name: asfv_p72
+  taxon_id: 10497              # African swine fever virus
+  gene: B646L                  # p72 major capsid protein; alt: "p72" / "major capsid protein"
+  max_sequences: 25            # span genotypes I and II at minimum
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Swine viral differential panel + host background:
+  #   csfv.fasta             - classical swine fever virus (RNA pestivirus; main clinical confounder)
+  #   prrsv.fasta            - PRRS virus (endemic respiratory RNA virus; co-circulates)
+  #   pcv2.fasta             - porcine circovirus 2 (ubiquitous DNA virus; closest DNA background)
+  #   porcine_parvovirus.fasta - PPV (common swine DNA virus)
+  #   sus_scrofa_fragment.fasta - Sus scrofa host DNA from blood or tissue
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- must distinguish from other swine DNA viruses
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.25        # p72 is well-conserved across genotypes
+  min_region_length: 220         # plenty of room in the ~2580 nt B646L CDS
+
+primer:
+  tm_min: 60.0                   # DNA target -- standard LAMP (no RT step needed)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/asfv_p72
+  top_n: 10
+  generate_html: true
+  generate_csv: true
