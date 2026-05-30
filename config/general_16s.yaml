@@ -1,0 +1,137 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: Universal bacterial 16S rRNA -- sample-adequacy / positive control
+#
+# Why this target:
+#   The 16S ribosomal RNA gene is present in all bacteria and is the canonical
+#   marker for microbial community profiling.  In a diagnostic LAMP panel, a
+#   universal 16S assay serves as the internal positive control: a positive
+#   signal confirms that (a) DNA extraction succeeded and (b) sufficient
+#   microbial DNA reached the reaction.  A negative signal on all
+#   functional-guild channels alongside a negative 16S indicates extraction
+#   failure or genuinely zero microbial load -- two very different situations
+#   that a 16S channel can distinguish.
+#
+#   In the oilfield MIC panel context (Recipes 6, 8, 10, 15, 16, 17 in
+#   docs/cookbook.md), the 16S channel completes the six-channel panel:
+#     SRB (dsrB) + methanogens (mcrA) + IRB (omcA) +
+#     APB (fthfs) + NRB (narG) + universal 16S (this assay)
+#   See Recipe 19 in docs/cookbook.md for the full workflow.
+#
+# Gene marker -- 16S ribosomal RNA:
+#   The 16S rRNA gene has a mosaic structure: highly conserved flanking blocks
+#   interleaved with nine variable regions (V1-V9).  Universal LAMP primers
+#   must land in the conserved flanking blocks so that any bacterium amplifies
+#   regardless of phylogenetic distance from the design sequences.
+#
+#   Critical design difference from all other LAMP-Forge assays:
+#   - All other assays: low entropy = specific marker (exclusivity goal)
+#   - This assay:      very low entropy = universal positions (inclusivity goal)
+#
+#   Setting entropy_threshold: 0.10 ensures primer sites are chosen only from
+#   positions that are invariant across all bacteria (entropy < 0.05 bits in
+#   large-scale 16S databases; 0.10 is a conservative ceiling).  This is the
+#   same rationale behind universal PCR primers such as 515F/806R (Parada et
+#   al. 2016) and 27F/1492R (Lane et al. 1985).
+#
+# BioVind use-case:
+#   Sixth channel in the oilfield MIC/souring 6-plex panel alongside
+#   config/srb_dsrB.yaml, config/methanogen_mcrA.yaml, config/irb_omcA.yaml,
+#   config/apb_fthfs.yaml, and config/nrb_narG.yaml.  The 16S channel is also
+#   the natural sample-adequacy control for farm biosecurity panels and
+#   point-of-care panels detecting bacterial pathogens.
+#
+# Key parameter notes:
+#   - conservation.entropy_threshold: 0.10 -- unusually strict vs functional-
+#     gene markers (dsrB: 0.35, mcrA: 0.35, narG: 0.35, fthfs: 0.30).
+#     Only truly invariant 16S positions are suitable for universal primers;
+#     a looser threshold includes variable-region positions and will yield
+#     primers that miss distant phyla.
+#   - target.max_sequences: 50 -- needs broad phylogenetic diversity across
+#     Firmicutes, Proteobacteria, Actinobacteria, Bacteroidetes, and
+#     Thermodesulfobacteria at minimum, to verify that the chosen windows
+#     are invariant cross-phylum.
+#   - gc_min/gc_max: 40-65% -- conserved 16S flanking regions are ~52% GC in
+#     E. coli; the window is moderate to accommodate AT-rich Firmicutes (~45%)
+#     and GC-rich Actinobacteria (~57%).
+#   - tm_min: 60.0 -- this is a ribosomal DNA (chromosomal) target; standard
+#     LAMP Tm floor, NOT the RT-LAMP 63 degC one-step co-activity floor used
+#     for RNA-virus targets (PRRSV, FMDV, AIV, NDV).
+#   - off_targets.min_identity_threshold: 0.85 -- tighter than the standard
+#     0.80 because Bacteria and Archaea share conserved rRNA structural motifs;
+#     a tighter threshold catches archaeal cross-reactivity early.
+#
+# References:
+#   Lane DJ, Pace B, Olsen GJ et al. (1985) Rapid determination of 16S
+#   ribosomal RNA sequences for phylogenetic analyses. Proc Natl Acad Sci USA
+#   82:6955-6959. doi:10.1073/pnas.82.20.6955
+#   Parada AE, Needham DM & Fuhrman JA (2016) Every base matters: assessing
+#   small subunit rRNA primers for marine microbiomes with mock communities,
+#   time series and global field samples. Environ Microbiol 18:1403-1414.
+#   doi:10.1111/1462-2920.13023
+#   Woese CR & Fox GE (1977) Phylogenetic structure of the prokaryotic domain:
+#   the primary kingdoms. Proc Natl Acad Sci USA 74:5088-5090.
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63. doi:10.1093/nar/28.12.e63
+# ============================================================================
+
+target:
+  name: universal_16S_control
+  taxon_id: 2                      # Bacteria -- broadest anchor for universal coverage
+  accessions: []                   # extend with Firmicutes, Actinobacteria, Bacteroidetes
+                                   # representatives to confirm cross-phylum universality
+  gene: "16S ribosomal RNA"        # canonical NCBI annotation for the 16S rDNA
+  max_sequences: 50                # span major bacterial phyla for conservation validation
+  email: you@your-inst.edu         # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # The 16S universal control is DESIGNED to detect all Bacteria; the
+  # off-target panel tests for false-positives against non-bacterial nucleic
+  # acids that co-extract alongside bacterial DNA in oilfield or clinical samples.
+  # Archaea are the highest-priority off-targets in the oilfield context:
+  # methanogens and Archaeoglobus share the sample matrix with SRB and IRB,
+  # and their 16S rRNA structural motifs overlap with bacterial 16S.
+  #
+  #   archaeoglobus_fulgidus.fasta        -- sulfate-reducing archaeon; shares
+  #                                          oilfield niche with SRB/IRB; key test
+  #                                          for whether the assay fires on Archaea
+  #   methanobacterium_formicicum.fasta   -- methanogen archaeon (archaeal 16S
+  #                                          differs significantly from bacterial 16S
+  #                                          but shares rRNA secondary structure)
+  #   sulfolobus_acidocaldarius.fasta     -- thermoacidophilic crenarchaeon; very
+  #                                          distant from Bacteria; strong negative control
+  #   human_18S_rRNA.fasta               -- eukaryotic 18S rRNA (NR_003286.4);
+  #                                          must NOT amplify in human PoC contexts
+  #   human_chr_fragment.fasta           -- human gDNA background; reservoir inspector
+  #                                          skin-shed DNA or patient sample host background
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85        # tighter than standard: bacteria and archaea
+                                      # share conserved rRNA structural motifs
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.10             # strict: only truly universal, invariant positions
+                                      # in the 16S flanking blocks are suitable for
+                                      # primers that must amplify every bacterium
+                                      # (contrast with dsrB/mcrA/narG at 0.35 bits)
+  min_region_length: 220              # LAMP needs ~200 bp; 220 ensures margin for F3/B3
+
+primer:
+  tm_min: 60.0                        # DNA target -- standard LAMP Tm floor (not RT-LAMP)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0                        # Firmicutes 16S conserved blocks ~45% GC
+  gc_max: 65.0                        # Actinobacteria 16S conserved blocks ~57% GC;
+                                      # wide window to accommodate cross-phylum GC spread
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/general_16s
+  top_n: 10
+  generate_html: true
+  generate_csv: true

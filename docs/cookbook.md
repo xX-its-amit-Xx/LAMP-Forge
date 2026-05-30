@@ -2180,3 +2180,220 @@ tube at 63-65 degC.
   doi:10.1016/j.vetmic.2016.12.019
 - Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 19 -- Universal 16S rRNA sample-adequacy control (all panels)
+
+**Goal.** Design a LAMP assay that amplifies any bacterium present in the
+sample -- serving as an internal positive control that confirms DNA extraction
+succeeded and sufficient microbial nucleic acid reached the reaction.
+
+**Why it's needed.** Every BioVind functional-guild panel (oilfield souring,
+farm biosecurity, point-of-care) can return an all-negative result for two
+completely different reasons: (1) the target organisms are genuinely absent,
+or (2) DNA extraction failed.  Without an internal control you cannot
+distinguish these cases and will mis-report extraction failures as clean
+samples.  A 16S positive control resolves the ambiguity:
+
+| 16S result | Functional-guild channels | Interpretation |
+|---|---|---|
+| + | at least one + | Extraction OK; target guilds detected |
+| + | all - | Extraction OK; target guilds genuinely absent |
+| - | all - | **Extraction failure** -- repeat extraction; do not report |
+| - | at least one + | Internal inconsistency; investigate (partial inhibition?) |
+
+In the oilfield souring context, this is the sixth channel that completes
+the SRB + methanogen + IRB + APB + NRB five-guild panel (Recipes 6, 10,
+15, 16, 17).
+
+**Why 16S rRNA.**  The 16S ribosomal RNA gene is present in all bacteria in
+multiple copies per cell (4-10 in most species), making it the most
+sensitive possible DNA target for confirming bacterial nucleic acid is
+present.  Its mosaic structure -- highly conserved flanking blocks flanking
+nine variable regions (V1-V9) -- is precisely what makes it possible to
+design six primers all landing in invariant sequences while the amplicon
+spans a variable region (making the amplicon unambiguously microbial).
+
+**Key design inversion.**  This is the only LAMP-Forge assay where the
+design goal is **inclusivity**, not exclusivity.  All other assays set a
+low entropy threshold to find the conserved marker gene; here the low
+entropy threshold selects positions that match **all** bacteria.  The
+off-target panel does not check for false-positives against organisms in
+the same guild -- it checks for false-positives against host DNA and Archaea,
+which would inflate the bacterial load count.
+
+**Target sequences.**  Use the ready-made config at `config/general_16s.yaml`,
+or paste the block below.  The `taxon_id: 2` anchor (Bacteria) retrieves a
+phylogenetically diverse set; supplement with explicit accessions spanning
+Firmicutes, Actinobacteria, and Bacteroidetes if auto-retrieval is dominated
+by Proteobacteria:
+
+```yaml
+target:
+  name: universal_16S_control
+  taxon_id: 2                      # Bacteria -- broadest anchor for universal coverage
+  accessions: []                   # extend with representatives of major phyla if needed
+  gene: "16S ribosomal RNA"
+  max_sequences: 50                # sample major phyla for cross-phylum conservation check
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85    # tighter: bacteria and archaea share rRNA motifs
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.10         # strict: only truly invariant universal positions
+  min_region_length: 220
+
+primer:
+  tm_min: 60.0                    # DNA target -- standard LAMP (not RT-LAMP)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0
+  gc_max: 65.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/general_16s
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config notes.**
+
+- `conservation.entropy_threshold: 0.10` -- the most distinctive parameter in
+  this config.  All other LAMP-Forge configs set 0.20-0.35 bits; this assay
+  requires truly invariant positions (entropy < 0.05 bits in large 16S databases)
+  to guarantee cross-phylum amplification.  The invariant blocks of 16S rRNA
+  (Lane et al. 1985) are the same regions targeted by universal PCR primers
+  (27F/1492R, 515F/806R).
+- `off_targets.min_identity_threshold: 0.85` -- slightly tighter than the
+  standard 0.80 because archaeal 16S rRNA shares secondary-structure motifs
+  with bacterial 16S.  In an **oilfield** panel, methanogens and Archaeoglobus
+  share the sample matrix; in a **bacterial-only** POC panel, archaeal
+  cross-reactivity would be a false-positive.
+- `tm_min: 60.0` -- ribosomal DNA is a chromosomal DNA target; do **not** raise
+  to the RT-LAMP 63 degC floor used for RNA-virus targets.
+- `target.taxon_id: 2` -- unique among all LAMP-Forge configs; every other assay
+  uses a genus- or species-level anchor.
+
+**Off-target panel.**  Non-bacterial nucleic acids that co-extract from
+oilfield and clinical samples:
+
+| File | Source | Why |
+|---|---|---|
+| `archaeoglobus_fulgidus.fasta` | NC_000917.1 | Sulfate-reducing archaeon; key oilfield off-target; cross-reactivity would miscount archaeal DNA as bacterial load |
+| `methanobacterium_formicicum.fasta` | representative RefSeq | Methanogen archaeon sharing oilfield sample matrix with SRB/IRB |
+| `sulfolobus_acidocaldarius.fasta` | NC_007181.1 | Thermoacidophilic crenarchaeon; very distant from Bacteria; strong negative control |
+| `human_18S_rRNA.fasta` | NR_003286.4 | Eukaryotic 18S rRNA; must NOT amplify in clinical or PoC contexts |
+| `human_chr_fragment.fasta` | Subset of GRCh38 chr1 | Human gDNA background; reservoir inspector or patient sample contamination |
+
+**Expected output.**  With `entropy_threshold: 0.10`, expect 2-5 conserved
+windows -- fewer than for specific functional-gene markers, because the
+invariant 16S blocks are short (~50-100 nt each).  Top-scoring sets should
+show zero flagged hits against human and eukaryotic DNA.  Archaeal 16S may
+flag at high identity (>85%) -- document this in the run report and decide
+whether archaeal cross-reactivity is acceptable for your panel's context.
+
+**Run.**
+
+```bash
+docker compose run --rm lamp-forge run --config /work/config/general_16s.yaml
+```
+
+**Complete the six-channel oilfield MIC panel.**  After designing all six
+assays independently:
+
+```bash
+lamp-forge panel \
+  --set SRB=results/srb_dsrB/primer_sets.json \
+  --set MCR=results/methanogen_mcrA/primer_sets.json \
+  --set IRB=results/irb_omcA/primer_sets.json \
+  --set APB=results/apb_fthfs/primer_sets.json \
+  --set NRB=results/nrb_narG/primer_sets.json \
+  --set 16S=results/general_16s/primer_sets.json \
+  --top-per-target 5 \
+  --out results/mic_6plex_panel
+```
+
+Generate the pooling sheet (six targets = 264 uM minimum; request 300 uM
+resuspension from IDT or Twist, or use vendor pre-mix):
+
+```bash
+lamp-forge pool \
+  --panel results/mic_6plex_panel/panel.json \
+  --stock-conc 300 \
+  --total-volume 500 \
+  --out results/mic_6plex_panel/pool_sheet.csv
+```
+
+Export the 16S control primers for IDT ordering:
+
+```bash
+lamp-forge export \
+  --input results/general_16s/primer_sets.json \
+  --format idt \
+  --target-label 16S_ctrl \
+  --out orders/16S_ctrl_idt_order.csv
+```
+
+**Six-channel result interpretation table.**
+
+| SRB | MCR | IRB | APB | NRB | 16S | Interpretation |
+|---|---|---|---|---|---|---|
+| - | - | - | - | - | - | **Extraction failure** -- repeat extraction; do not report |
+| - | - | - | - | - | + | Clean sample; no MIC guilds detected; low risk |
+| + | + | + | + | + | + | All five MIC guilds active; maximum corrosion/souring risk |
+| + | - | + | + | + | + | APB-SRB syntrophic loop active; iron cycling; escalate biocide |
+| - | - | - | - | + | + | NRB dominant; nitrate injection suppressing SRB; treatment working |
+| + | + | + | + | + | - | Inconsistent -- possible assay inhibition; investigate |
+
+**LOD context for the 16S control.**  16S rRNA is present in 4-10 copies per
+cell, so the effective LOD is 2-5x lower than for single-copy functional genes.
+Use `lamp-forge lod` with the same extraction parameters as the functional
+channels to model the worst case:
+
+```bash
+lamp-forge lod \
+  --sample-volume 1000 \
+  --efficiency 0.50 \
+  --eluate-volume 100 \
+  --reaction-input 5
+```
+
+For single-copy genes, LOD_95 approx 150 copies/mL.  With 4-10 copies per
+cell for 16S, the control channel calls positive at 15-38 cells/mL -- well
+below the 10^3 cells/mL threshold at which oilfield MIC risk is actionable.
+
+**Wet-lab notes.**
+
+- Run no-template controls (NTCs) alongside every batch; 16S amplicon carryover
+  is the primary false-positive risk because the gene is environmentally abundant.
+- For oilfield samples use bead-capture DNA extraction (e.g. PowerSoil Pro)
+  rather than simple boiling; the 16S channel is the canary for extraction
+  failures and must be the most sensitive assay in the panel.
+- For clinical contexts, validate that the chosen primer set does not amplify
+  human 18S or mitochondrial 16S rRNA under standard LAMP conditions.
+
+**References.**
+
+- Lane DJ, Pace B, Olsen GJ et al. (1985). Rapid determination of 16S
+  ribosomal RNA sequences for phylogenetic analyses. *Proc Natl Acad Sci USA*
+  82:6955-6959. doi:10.1073/pnas.82.20.6955
+- Parada AE, Needham DM & Fuhrman JA (2016). Every base matters: assessing
+  small subunit rRNA primers for marine microbiomes with mock communities,
+  time series and global field samples. *Environ Microbiol* 18:1403-1414.
+  doi:10.1111/1462-2920.13023
+- Woese CR & Fox GE (1977). Phylogenetic structure of the prokaryotic domain:
+  the primary kingdoms. *Proc Natl Acad Sci USA* 74:5088-5090.
+  doi:10.1073/pnas.74.11.5088
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
