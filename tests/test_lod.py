@@ -471,3 +471,158 @@ class TestLodCli:
             obj={},
         )
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# Multi-copy LOD (copies_per_cell)
+# ---------------------------------------------------------------------------
+
+
+class TestMultiCopyLod:
+    """Tests for the copies_per_cell / lod_cells_per_ml feature.
+
+    Biological context: 16S rRNA is present in 4-10 copies per cell.
+    When copies_per_cell=7, the LOD in cells/mL should be ~7x lower than the
+    LOD in copies/mL for the same extraction chain.
+    """
+
+    def _params(self) -> ExtractionParams:
+        # 1000 uL sample, 50% efficiency, 100 uL eluate, 5 uL to reaction
+        # effective sample = 1000 * 0.5 * (5/100) = 25 uL
+        return ExtractionParams(
+            sample_volume_ul=1000.0,
+            extraction_efficiency=0.50,
+            eluate_volume_ul=100.0,
+            reaction_input_ul=5.0,
+        )
+
+    def test_single_copy_cells_per_ml_equals_copies_per_ml(self) -> None:
+        e = estimate_lod(self._params(), copies_per_cell=1)
+        assert abs(e.lod_cells_per_ml - e.lod_copies_per_ml) < 1e-9
+
+    def test_copies_per_cell_stored_on_estimate(self) -> None:
+        e = estimate_lod(self._params(), copies_per_cell=7)
+        assert e.copies_per_cell == 7
+
+    def test_cells_per_ml_seven_fold_lower_than_copies(self) -> None:
+        e = estimate_lod(self._params(), copies_per_cell=7)
+        ratio = e.lod_copies_per_ml / e.lod_cells_per_ml
+        assert abs(ratio - 7.0) < 1e-9
+
+    def test_ten_copies_per_cell(self) -> None:
+        e = estimate_lod(self._params(), copies_per_cell=10)
+        assert abs(e.lod_copies_per_ml / e.lod_cells_per_ml - 10.0) < 1e-9
+
+    def test_lod_cells_monotonically_decreasing_with_copies(self) -> None:
+        params = self._params()
+        cells_lods = [
+            estimate_lod(params, copies_per_cell=n).lod_cells_per_ml for n in (1, 4, 7, 10)
+        ]
+        assert cells_lods == sorted(cells_lods, reverse=True)
+
+    def test_raises_on_zero_copies_per_cell(self) -> None:
+        with pytest.raises(ValueError, match="copies_per_cell"):
+            estimate_lod(self._params(), copies_per_cell=0)
+
+    def test_raises_on_negative_copies_per_cell(self) -> None:
+        with pytest.raises(ValueError, match="copies_per_cell"):
+            estimate_lod(self._params(), copies_per_cell=-1)
+
+    def test_lod_table_passes_copies_per_cell(self) -> None:
+        table = lod_table(self._params(), copies_per_cell=7)
+        for e in table:
+            assert e.copies_per_cell == 7
+            assert abs(e.lod_copies_per_ml / e.lod_cells_per_ml - 7.0) < 1e-9
+
+    def test_default_copies_per_cell_is_one(self) -> None:
+        e = estimate_lod(self._params())
+        assert e.copies_per_cell == 1
+
+    def test_csv_contains_cells_per_ml_column(self, tmp_path: Path) -> None:
+        estimates = lod_table(self._params(), copies_per_cell=7)
+        out = tmp_path / "lod_multi.csv"
+        write_lod_csv(estimates, out)
+        rows = list(csv.DictReader(out.open()))
+        assert "copies_per_cell" in rows[0]
+        assert "lod_cells_per_ml_sample" in rows[0]
+        for row in rows:
+            assert row["copies_per_cell"] == "7"
+            cells = float(row["lod_cells_per_ml_sample"])
+            copies = float(row["lod_copies_per_ml_sample"])
+            assert abs(copies / cells - 7.0) < 0.01
+
+    def test_csv_single_copy_cells_equals_copies(self, tmp_path: Path) -> None:
+        estimates = lod_table(self._params(), copies_per_cell=1)
+        out = tmp_path / "lod_single.csv"
+        write_lod_csv(estimates, out)
+        rows = list(csv.DictReader(out.open()))
+        for row in rows:
+            cells = float(row["lod_cells_per_ml_sample"])
+            copies = float(row["lod_copies_per_ml_sample"])
+            assert abs(cells - copies) < 0.01
+
+
+class TestMultiCopyCli:
+    """CLI tests for --copies-per-cell."""
+
+    def _run(self, extra_args: list[str]) -> object:
+        from click.testing import CliRunner
+
+        from lamp_forge.cli import cli
+
+        runner = CliRunner()
+        return runner.invoke(
+            cli,
+            [
+                "lod",
+                "--sample-volume", "1000",
+                "--eluate-volume", "100",
+                "--reaction-input", "5",
+                *extra_args,
+            ],
+            obj={},
+        )
+
+    def test_default_no_cells_column(self) -> None:
+        result = self._run([])
+        assert result.exit_code == 0, result.output  # type: ignore[union-attr]
+        assert "cells/mL" not in result.output  # type: ignore[union-attr]
+
+    def test_copies_per_cell_shows_cells_column(self) -> None:
+        result = self._run(["--copies-per-cell", "7"])
+        assert result.exit_code == 0, result.output  # type: ignore[union-attr]
+        assert "cells/mL" in result.output  # type: ignore[union-attr]
+
+    def test_copies_per_cell_message_shown(self) -> None:
+        result = self._run(["--copies-per-cell", "10"])
+        assert result.exit_code == 0, result.output  # type: ignore[union-attr]
+        assert "10" in result.output  # type: ignore[union-attr]
+
+    def test_rejects_zero_copies_per_cell(self) -> None:
+        result = self._run(["--copies-per-cell", "0"])
+        assert result.exit_code != 0  # type: ignore[union-attr]
+
+    def test_writes_csv_with_cells_column(self, tmp_path: Path) -> None:
+        from click.testing import CliRunner
+
+        from lamp_forge.cli import cli
+
+        out = tmp_path / "lod_multi.csv"
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "lod",
+                "--sample-volume", "1000",
+                "--eluate-volume", "100",
+                "--reaction-input", "5",
+                "--copies-per-cell", "7",
+                "--out-csv", str(out),
+            ],
+            obj={},
+        )
+        assert result.exit_code == 0, result.output
+        assert out.exists()
+        rows = list(csv.DictReader(out.open()))
+        assert "copies_per_cell" in rows[0]
+        assert rows[0]["copies_per_cell"] == "7"

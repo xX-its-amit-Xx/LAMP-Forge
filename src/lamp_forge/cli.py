@@ -318,6 +318,20 @@ def panel(
     help="Detection probability threshold (repeat for multiple, e.g. --probability 0.95 --probability 0.99).",
 )
 @click.option(
+    "--copies-per-cell",
+    "copies_per_cell",
+    type=int,
+    default=1,
+    show_default=True,
+    help=(
+        "Gene copy number per organism cell (default 1 for single-copy genes). "
+        "Set to 4-10 for the 16S rRNA sample-adequacy control channel, "
+        "or to the plasmid copy number for resistance-gene targets "
+        "(e.g. blaKPC on a high-copy plasmid). "
+        "When > 1, an additional LOD (cells/mL) column is shown."
+    ),
+)
+@click.option(
     "--out-csv",
     "out_csv",
     type=click.Path(path_type=Path),
@@ -330,6 +344,7 @@ def lod(
     eluate_volume_ul: float,
     reaction_input_ul: float,
     probabilities: tuple[float, ...],
+    copies_per_cell: int,
     out_csv: Path | None,
 ) -> None:
     r"""Estimate LAMP assay limit of detection (LOD) across the extraction chain.
@@ -337,10 +352,18 @@ def lod(
     Computes the LOD in copies/reaction and back-calculates to copies/mL in
     the original sample using Poisson single-molecule statistics.
 
-    Example (200 uL blood, 50% extraction into 50 uL eluate, 5 uL to reaction):
+    Use --copies-per-cell > 1 for multi-copy gene targets to also show the
+    LOD expressed in cells/mL.  The 16S rRNA control channel typically has
+    4-10 copies per cell; --copies-per-cell 7 is a conservative midpoint.
 
     \b
+    Example (200 uL blood, 50% extraction into 50 uL eluate, 5 uL to reaction):
         lamp-forge lod --sample-volume 200 --eluate-volume 50 --reaction-input 5
+
+    \b
+    Example (16S rRNA control, 1 mL produced water, 7 copies per cell):
+        lamp-forge lod --sample-volume 1000 --eluate-volume 100 \
+          --reaction-input 5 --copies-per-cell 7
     """
     from lamp_forge.lod import ExtractionParams, lod_table, write_lod_csv
 
@@ -357,7 +380,11 @@ def lod(
 
         sys.exit(2)
 
-    estimates = lod_table(params, tuple(probabilities))
+    if copies_per_cell < 1:
+        click.secho("--copies-per-cell must be >= 1.", fg="red", err=True)
+        sys.exit(2)
+
+    estimates = lod_table(params, tuple(probabilities), copies_per_cell=copies_per_cell)
 
     click.echo(
         f"Extraction chain: {sample_volume_ul:.0f} uL sample, "
@@ -368,16 +395,33 @@ def lod(
     click.echo(
         f"Effective sample volume per reaction: {params.copies_per_rxn_per_copy_per_ul:.2f} uL"
     )
+    if copies_per_cell > 1:
+        click.echo(f"Gene copies per cell: {copies_per_cell} (LOD also shown in cells/mL)")
     click.echo("")
-    header = f"{'P(detect)':>12}  {'lambda (copies/rxn)':>20}  {'LOD (copies/mL)':>18}"
+
+    if copies_per_cell > 1:
+        header = (
+            f"{'P(detect)':>12}  {'lambda (copies/rxn)':>20}  "
+            f"{'LOD (copies/mL)':>18}  {'LOD (cells/mL)':>16}"
+        )
+    else:
+        header = f"{'P(detect)':>12}  {'lambda (copies/rxn)':>20}  {'LOD (copies/mL)':>18}"
     click.echo(header)
     click.echo("-" * len(header))
     for e in estimates:
-        click.echo(
-            f"{e.detection_probability:>12.3f}  "
-            f"{e.lod_copies_per_reaction:>20.3f}  "
-            f"{e.lod_copies_per_ml:>18.1f}"
-        )
+        if copies_per_cell > 1:
+            click.echo(
+                f"{e.detection_probability:>12.3f}  "
+                f"{e.lod_copies_per_reaction:>20.3f}  "
+                f"{e.lod_copies_per_ml:>18.1f}  "
+                f"{e.lod_cells_per_ml:>16.1f}"
+            )
+        else:
+            click.echo(
+                f"{e.detection_probability:>12.3f}  "
+                f"{e.lod_copies_per_reaction:>20.3f}  "
+                f"{e.lod_copies_per_ml:>18.1f}"
+            )
 
     if out_csv is not None:
         write_lod_csv(estimates, out_csv)

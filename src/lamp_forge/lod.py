@@ -113,6 +113,12 @@ class LodEstimate:
             and industrial unit for liquid samples).
         lod_genome_eq_per_ml: Alias of lod_copies_per_ml; "genome equivalents
             per mL" (GE/mL) is preferred nomenclature in molecular diagnostics.
+        copies_per_cell: Gene copy number per organism cell (default 1 for
+            single-copy genes).  Use 4-10 for 16S rRNA (multi-copy ribosomal
+            locus) or the plasmid copy number for resistance-gene targets.
+        lod_cells_per_ml: LOD expressed as cells (organisms) per mL of original
+            sample, equal to ``lod_copies_per_ml / copies_per_cell``.  For
+            single-copy genes this equals ``lod_copies_per_ml``.
     """
 
     extraction: ExtractionParams
@@ -121,6 +127,8 @@ class LodEstimate:
     lod_copies_per_ul: float
     lod_copies_per_ml: float
     lod_genome_eq_per_ml: float
+    copies_per_cell: int
+    lod_cells_per_ml: float
 
 
 # ---------------------------------------------------------------------------
@@ -168,23 +176,36 @@ def detection_probability_at(mean_copies: float) -> float:
 def estimate_lod(
     extraction: ExtractionParams,
     detection_probability: float = 0.95,
+    copies_per_cell: int = 1,
 ) -> LodEstimate:
     """Estimate the assay LOD for a given extraction chain and target probability.
 
     Args:
         extraction: Parameters describing the sample preparation chain.
         detection_probability: Required P(detect) at the LOD. Default 0.95.
+        copies_per_cell: Number of target-gene copies per organism cell.
+            Default 1 for single-copy genes (most functional markers: dsrB,
+            mcrA, narG, omcA, fthfs, rpoB).  Use 4–10 for the 16S rRNA
+            control channel, or the known plasmid copy number for resistance
+            genes (e.g. blaKPC on a multi-copy plasmid).  When > 1, the
+            returned ``lod_cells_per_ml`` is lower than ``lod_copies_per_ml``
+            by the same factor, reflecting the analytical advantage of
+            targeting a multi-copy locus.
 
     Returns:
         :class:`LodEstimate` with lambda_LOD and back-calculated sample LOD.
 
     Raises:
-        ValueError: If ``detection_probability`` is not in (0, 1).
+        ValueError: If ``detection_probability`` is not in (0, 1), or
+            ``copies_per_cell`` is less than 1.
     """
+    if copies_per_cell < 1:
+        raise ValueError(f"copies_per_cell must be >= 1, got {copies_per_cell!r}")
     lod_rxn = poisson_lod(detection_probability)
     conv = extraction.copies_per_rxn_per_copy_per_ul
     lod_per_ul = lod_rxn / conv
     lod_per_ml = lod_per_ul * 1000.0
+    lod_cells = lod_per_ml / copies_per_cell
     return LodEstimate(
         extraction=extraction,
         detection_probability=detection_probability,
@@ -192,12 +213,15 @@ def estimate_lod(
         lod_copies_per_ul=lod_per_ul,
         lod_copies_per_ml=lod_per_ml,
         lod_genome_eq_per_ml=lod_per_ml,
+        copies_per_cell=copies_per_cell,
+        lod_cells_per_ml=lod_cells,
     )
 
 
 def lod_table(
     extraction: ExtractionParams,
     probabilities: tuple[float, ...] = (0.90, 0.95, 0.99, 0.999),
+    copies_per_cell: int = 1,
 ) -> list[LodEstimate]:
     """Return LOD estimates at multiple detection probabilities.
 
@@ -208,11 +232,13 @@ def lod_table(
     Args:
         extraction: Sample preparation chain parameters.
         probabilities: Detection probabilities to evaluate.
+        copies_per_cell: Gene copy number per organism cell; forwarded to
+            :func:`estimate_lod`.  Default 1 (single-copy genes).
 
     Returns:
         List of :class:`LodEstimate`, one per probability, in input order.
     """
-    return [estimate_lod(extraction, p) for p in probabilities]
+    return [estimate_lod(extraction, p, copies_per_cell) for p in probabilities]
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +263,8 @@ def write_lod_csv(estimates: list[LodEstimate], path: Path) -> None:
                 "lod_copies_per_ul_sample",
                 "lod_copies_per_ml_sample",
                 "lod_genome_eq_per_ml",
+                "copies_per_cell",
+                "lod_cells_per_ml_sample",
                 "sample_volume_ul",
                 "extraction_efficiency",
                 "eluate_volume_ul",
@@ -252,6 +280,8 @@ def write_lod_csv(estimates: list[LodEstimate], path: Path) -> None:
                     f"{e.lod_copies_per_ul:.4f}",
                     f"{e.lod_copies_per_ml:.2f}",
                     f"{e.lod_genome_eq_per_ml:.2f}",
+                    f"{e.copies_per_cell}",
+                    f"{e.lod_cells_per_ml:.2f}",
                     f"{e.extraction.sample_volume_ul:.1f}",
                     f"{e.extraction.extraction_efficiency:.3f}",
                     f"{e.extraction.eluate_volume_ul:.1f}",
