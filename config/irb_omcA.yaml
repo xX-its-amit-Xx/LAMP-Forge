@@ -1,0 +1,107 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: Iron-Reducing Bacteria (IRB) -- oilfield MIC monitoring
+#         via outer membrane cytochrome A (omcA)
+#
+# Why this target: IRB, principally Shewanella species, reduce ferric iron
+# (Fe3+) to ferrous iron (Fe2+) using extracellular electron transfer (EET)
+# via the MtrCAB-OmcA complex.  In oilfield produced water and pipeline
+# biofilm, IRB catalyse the oxidative dissolution of protective iron-oxide
+# scales and directly accelerate pitting corrosion -- the dominant mechanism
+# of microbiologically influenced corrosion (MIC) in oil & gas systems.
+# omcA (outer membrane decaheme cytochrome A; SO1780 in Shewanella oneidensis
+# MR-1) is essential for iron reduction and is widely used as a functional
+# marker gene for Shewanella-type IRB in environmental monitoring (Lies et al.
+# 2005, Myers & Myers 1992).
+#
+# BioVind use-case: third channel of the oilfield MIC souring panel
+# (SRB dsrB + methanogen mcrA + IRB omcA); see Recipe 15 in docs/cookbook.md.
+# Combine with config/srb_dsrB.yaml and config/methanogen_mcrA.yaml and run
+# lamp-forge panel to screen cross-assay compatibility before ordering.
+# High SRB + high IRB = aggressive under-deposit pitting risk; high methanogens
+# = gas-quality concern.  The three assays together give a complete souring
+# and MIC picture from a single produced-water sample.
+#
+# Key parameter notes:
+#   - target.taxon_id: 22 -- Shewanella genus (dominant IRB in oilfields).
+#     Add Geobacter accessions if Geobacter spp. are relevant to your site;
+#     note that Geobacter omcA is phylogenetically distant from Shewanella
+#     omcA, so separate configs may give better conserved-region resolution.
+#   - conservation.entropy_threshold: 0.30 -- omcA is under strong
+#     functional constraint (the heme-binding CXXCH motifs are invariant)
+#     but diverges at the sequence level across Shewanella species.
+#   - gc_min/gc_max: 40-60% -- Shewanella GC content is 45-52%; keep the
+#     window slightly wider (40-60%) to tolerate primer GC near region edges.
+#   - target.accessions: populate with omcA CDS records for diverse
+#     Shewanella spp. (S. putrefaciens, S. baltica, S. loihica, S. frigidimarina,
+#     S. amazonensis) from NCBI before running for best cross-strain coverage.
+#
+# Specificity trap: many bacteria contain monoheme or diheme cytochromes c
+# that share the CXXCH motif but are NOT iron-reducers (e.g. respiratory
+# cytochromes in Pseudomonas, E. coli).  Include these in the off-target panel.
+# The 10-heme structure of omcA is unique; BLAST identity over the full-length
+# gene (600+ aa) is the correct filter, which the specificity stage applies.
+#
+# References:
+#   Myers CR & Myers JM (1992) Localization of cytochromes to the outer
+#   membrane of anaerobically grown Shewanella putrefaciens MR-1.
+#   J Bacteriol 174:3429-3438.
+#   Lies DP et al. (2005) Shewanella oneidensis MR-1 uses overlapping
+#   pathways for iron reduction at a distance and by direct contact under
+#   conditions relevant for biofilms. Appl Environ Microbiol 71:4414-4426.
+# ============================================================================
+
+target:
+  name: irb_omcA_oilfield
+  taxon_id: 22               # Shewanella genus -- dominant oilfield IRB
+  accessions:
+    # Curate omcA CDS records across Shewanella spp. for broad coverage.
+    # Recommended: S. putrefaciens (CN-32), S. baltica (OS678), S. loihica
+    # (PV-4), S. frigidimarina (NCIMB 400), S. amazonensis (SB2B).
+    # Leave empty [] for a Shewanella-genus taxon-driven test run.
+    []
+  gene: omcA                 # outer membrane decaheme cytochrome A
+  max_sequences: 30          # Shewanella is species-rich; 30 spans key oilfield strains
+  email: you@your-inst.edu   # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Key off-target members for an oilfield IRB assay:
+  #   pseudomonas_aeruginosa.fasta      - ubiquitous oilfield bacterium with
+  #                                       own cytochrome c genes (not omcA)
+  #   desulfovibrio_vulgaris.fasta      - dominant SRB in oilfields; must NOT
+  #                                       co-flag in the IRB channel
+  #   geobacter_metallireducens.fasta   - IRB but Geobacter omcA is phylogenetically
+  #                                       distant from Shewanella omcA; flags here
+  #                                       indicate unexpectedly broad assay scope
+  #   escherichia_coli.fasta            - common contamination; has cytochromes
+  #                                       but not 10-heme outer membrane cytochromes
+  #   marinobacter_hydrocarbonoclasticus.fasta - common hydrocarbon-oxidizing
+  #                                              oilfield bacterium
+  #   crude_oil_microbiome_mixed.fasta  - produced-water metagenome background
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.30        # omcA: strong catalytic constraint (heme motifs
+                                 # invariant) but diverges across Shewanella species
+  min_region_length: 220         # LAMP needs ~200 bp; 220 ensures margin for F3/B3
+
+primer:
+  tm_min: 60.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0                   # Shewanella GC ~45-52%; broad window for primer search
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/irb_omcA
+  top_n: 10
+  generate_html: true
+  generate_csv: true

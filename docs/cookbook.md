@@ -1377,3 +1377,194 @@ BSL-2+ handling.
   of FMDV serotype O. *J Virol Methods* 251:6-10. doi:10.1016/j.jviromet.2017.10.003
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA. *Nucleic Acids Res*
   28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 15 — Iron-Reducing Bacteria (IRB) via *omcA* (oilfield MIC monitoring)
+
+**Goal.** Detect Shewanella-type iron-reducing bacteria (IRB) in oilfield
+produced water or pipeline biofilm using a LAMP assay targeting the outer
+membrane decaheme cytochrome A gene (*omcA*) — adding a third channel to
+a MIC/souring panel alongside SRB (Recipe 6 / dsrB) and methanogens
+(Recipe 10 / mcrA).
+
+**Why it's interesting.** IRB catalyse the reductive dissolution of ferric
+iron (Fe3+) protective oxide scales, directly exposing bare steel to
+corrosive environments.  In the MtrCAB-OmcA extracellular electron transfer
+(EET) pathway, *omcA* encodes the terminal outer-membrane decaheme cytochrome
+that hands electrons to solid-phase Fe3+ (or to a steel surface acting as the
+final electron acceptor).  A positive *omcA* signal in produced water or
+pigging solids therefore flags active iron-cycling, a prerequisite for
+under-deposit pitting corrosion — the dominant failure mode in oilfield
+pipeline MIC.
+
+Combined with an SRB (dsrB) assay, IRB and SRB together drive a corrosive
+syntrophic cycle: IRB mobilise iron from passive oxide scales; SRB reduce
+sulfate to H2S, which re-precipitates as highly corrosive iron sulfide
+(FeS / mackinawite).  Monitoring all three functional guilds (SRB +
+methanogens + IRB) from a single sample enables proportional risk scoring
+rather than a binary positive/negative call.
+
+*omcA* is the best single-gene marker for Shewanella-type IRB because:
+
+- It is essential for iron reduction and expressed only under anaerobic /
+  micro-aerophilic conditions relevant to biofilm niches.
+- It is phylogenetically restricted to the *Shewanella* clade — Geobacter
+  uses distinct outer-membrane cytochromes (omcS, omcB, omcE).
+- Its 10-heme CXXCH repeat structure yields conserved blocks at the
+  amino-acid level while diverging at the nucleotide level across species —
+  exactly the profile LAMP-Forge's entropy filter is designed to exploit.
+
+**Target.** *Shewanella* genus (NCBI taxon 22), *omcA* gene.  Use the
+ready-made config at `config/irb_omcA.yaml`, or paste the block below:
+
+```yaml
+target:
+  name: irb_omcA_oilfield
+  taxon_id: 22               # Shewanella genus
+  accessions: []             # extend with S. putrefaciens, S. baltica, S. loihica
+  gene: omcA
+  max_sequences: 30
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.30
+  min_region_length: 220
+
+primer:
+  tm_min: 60.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/irb_omcA
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config notes.**
+
+- `conservation.entropy_threshold: 0.30` — omcA sits between tight
+  housekeeping-gene designs (< 0.20 for rpoB, invA) and the looser
+  polyphyletic functional-gene threshold used for dsrB / mcrA (> 0.35).
+  The heme-binding CXXCH motifs are virtually invariant at the amino-acid
+  level, but synonymous divergence at the DNA level is substantial across
+  *Shewanella* species, so 0.30 is the empirical sweet spot.
+- `gc_min/gc_max: 40-60%` — *Shewanella* GC content is 45-52% depending on
+  species; the slightly wider window reduces the risk that primer design fails
+  to find a compliant primer in every conserved window.
+- `target.accessions` — add CDS records for *S. putrefaciens* CN-32,
+  *S. baltica* OS678, *S. loihica* PV-4, *S. frigidimarina* NCIMB 400, and
+  *S. amazonensis* SB2B to cover the phylogenetic breadth of oilfield
+  *Shewanella* isolates.
+
+**Off-target panel.** The key differentials are non-IRB bacteria that carry
+their own cytochrome c genes:
+
+| File | Source | Why |
+|---|---|---|
+| `pseudomonas_aeruginosa.fasta` | PA01 RefSeq | Ubiquitous oilfield biofilm bacterium; has respiratory cytochromes but not 10-heme omcA |
+| `desulfovibrio_vulgaris.fasta` | Hildenborough RefSeq | Dominant SRB in oilfields; must not cross-flag in the IRB channel |
+| `geobacter_metallireducens.fasta` | GS-15 RefSeq | Different IRB with phylogenetically distant outer-membrane cytochromes (omcS); cross-flag flags unexpectedly broad assay scope |
+| `escherichia_coli.fasta` | K-12 MG1655 RefSeq | Common contamination; has monoheme cytochromes but not 10-heme outer-membrane cytochromes |
+| `marinobacter_hydrocarbonoclasticus.fasta` | SP17 RefSeq | Common hydrocarbon-oxidising oilfield bacterium |
+| `crude_oil_microbiome_mixed.fasta` | Site metagenome | Produced-water environmental background |
+
+**Expected output.** The omcA gene (~1800 nt CDS) typically contains two or
+three conserved windows usable for LAMP.  Top-scoring sets should localise to
+the decaheme-core region with zero flagged off-target hits against the panel
+above.
+
+**Complete the three-channel oilfield MIC panel.** After designing SRB,
+methanogen, and IRB assays independently:
+
+```bash
+lamp-forge panel \
+  --set SRB=results/srb_dsrB/primer_sets.json \
+  --set MCR=results/methanogen_mcrA/primer_sets.json \
+  --set IRB=results/irb_omcA/primer_sets.json \
+  --top-per-target 5 \
+  --out results/mic_3plex_panel
+```
+
+Generate the pooling sheet for 200 uM synthesis stocks (3 targets = 132 uM
+minimum required; request 200 uM resuspension from your vendor):
+
+```bash
+lamp-forge pool \
+  --panel results/mic_3plex_panel/panel.json \
+  --stock-conc 200 \
+  --total-volume 500 \
+  --out results/mic_3plex_panel/pool_sheet.csv
+```
+
+Export the IRB primers to IDT for ordering:
+
+```bash
+lamp-forge export \
+  --input results/irb_omcA/primer_sets.json \
+  --format idt \
+  --target-label IRB_omcA \
+  --out orders/irb_omcA_idt_order.csv
+```
+
+Estimate LOD for a 1 mL produced-water sample processed through a standard
+DNA extraction kit (50% efficiency, 100 uL eluate, 5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 1000 \
+  --efficiency 0.50 \
+  --eluate-volume 100 \
+  --reaction-input 5
+```
+
+Effective sample = 1000 x 0.50 x (5/100) = 25 uL per reaction.
+Oilfield produced-water IRB loads at MIC-active sites typically exceed
+10^4 cells/mL, so the assay LOD provides orders-of-magnitude headroom.
+
+**Interpreting the three-channel panel result.**
+
+| SRB (dsrB) | Methanogens (mcrA) | IRB (omcA) | Risk interpretation |
+|---|---|---|---|
+| + | + | + | High MIC + souring risk; recommend biocide treatment review |
+| + | - | + | Active iron-cycling + sulfide; under-deposit corrosion risk, potential FeS scale |
+| + | + | - | Sulfidogenesis / souring risk; lower structural corrosion signal |
+| - | - | + | Iron-cycling active; corrosion risk without H2S; monitor for pitting |
+| - | - | - | Low microbial activity; re-test after any process upset |
+
+**Field note.** *Shewanella* spp. are facultative anaerobes; they can
+survive oxygen exposure between sampling and analysis.  Use anaerobic
+collection vessels (e.g. Hungate tubes with N2 headspace) or process samples
+within 4 hours of collection to avoid shifts in community composition.
+Filter-capture onto a 0.2 uM membrane and store at -20 degC if immediate DNA
+extraction is not possible.
+
+**References.**
+
+- Myers CR & Myers JM (1992). Localization of cytochromes to the outer
+  membrane of anaerobically grown *Shewanella putrefaciens* MR-1.
+  *J Bacteriol* 174:3429-3438.
+- Lies DP et al. (2005). *Shewanella oneidensis* MR-1 uses overlapping
+  pathways for iron reduction at a distance and by direct contact under
+  conditions relevant for biofilms. *Appl Environ Microbiol* 71:4414-4426.
+  doi:10.1128/AEM.71.8.4414-4426.2005
+- Ross DE et al. (2011). Comparative genomics of the electron transport
+  chains of the *Shewanella*, using the MtrCAB pathway as a model.
+  *PLoS Comput Biol* 7:e1002189. doi:10.1371/journal.pcbi.1002189
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
