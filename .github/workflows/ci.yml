@@ -94,6 +94,7 @@ jobs:
           context: .
           target: ${{ matrix.target }}
           push: false
+          load: true   # export to the local Docker daemon so `docker run` can find it
           tags: lamp-forge:${{ matrix.target }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
