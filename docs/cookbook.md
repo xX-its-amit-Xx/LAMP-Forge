@@ -1948,3 +1948,235 @@ preserve all community members from collection through extraction.
   doi:10.1016/j.copbio.2011.01.015
 - Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 18 -- Newcastle Disease Virus (NDV) via RT-LAMP (on-farm / border-post biosecurity)
+
+**Goal.** Detect Newcastle Disease Virus (NDV) broadly across all major Class I
+and Class II genotypes from cloacal or oropharyngeal swabs on-farm or at a
+checkpoint -- fast enough to inform a quarantine decision before birds move.
+
+**Why it's interesting.** NDV (Avian orthoavulavirus 1) is one of the most
+economically and epidemiologically significant avian pathogens worldwide.
+Velogenic strains (Class II genotypes V, VII, XII, XXI) cause near-100%
+flock mortality and are WOAH/OIE-listed as a notifiable disease.  The
+current global situation -- with HPAI H5N1 clade 2.3.4.4b circulating in
+poultry and wild birds -- makes rapid multi-target avian respiratory
+surveillance essential.  NDV is the natural fourth target in a farm
+biosecurity panel alongside AIV (Recipe 12), PRRSV (Recipe 11), and ASFV
+(Recipe 7): one portable device, one swab, four yes/no answers.
+
+NDV is a **negative-sense ssRNA paramyxovirus** (*Paramyxoviridae*,
+*Avulavirinae*), so detection requires **RT-LAMP**.  One-step RT-LAMP
+(Bst 2.0 WarmStart + NEB RTx or WarmStart RTx) at 63-65 degC delivers a
+positive signal in under 30 minutes, ideal for the BioVind portable platform
+at the farm gate or a border inspection post.
+
+**Choice of target gene.**  The NDV genome encodes six proteins; two are
+commonly used for molecular detection:
+
+- **M gene** (matrix protein, ~1077 nt CDS): most conserved across all
+  genotypes I-XXI and both Class I and Class II.  The basis of the
+  OIE-endorsed real-time RT-PCR assay (Wise et al. 2004) and several
+  published RT-LAMP assays.  Detects any NDV regardless of pathotype --
+  the correct scope for first-pass screening.
+- **F gene** (fusion protein, ~1662 nt CDS): carries the multi-basic cleavage
+  site that distinguishes velogenic from lentogenic strains.  Useful for
+  pathotyping after detection, but inter-genotype divergence is higher, so
+  broad-inclusivity primer design is harder.
+
+Use the **M gene** (this recipe and `config/ndv_M_gene.yaml`) for detection;
+if downstream pathotype information is needed, design a follow-up F-gene assay
+using `lamp-forge scaffold --target-name ndv_F_gene --vertical farm --na-type rna`.
+
+**Target.** M gene, pulling sequences spanning Class I (genotype 1, which
+includes avirulent aquatic-bird strains) and the major Class II genotypes
+(I-XXI), including the virulent genotypes responsible for active outbreaks
+(VII, XII, XXI in Asia/Africa/Middle East).  Use the ready-made config at
+`config/ndv_M_gene.yaml`, or paste the block below:
+
+```yaml
+target:
+  name: ndv_M_gene
+  taxon_id: 11234          # Newcastle disease virus (Avian orthoavulavirus 1)
+  gene: M                  # matrix protein; most conserved across all genotypes
+  max_sequences: 35        # span Class I + Class II genotypes I-XXI
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- APMV-2/3 share paramyxovirus family
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.30        # RNA virus, M gene moderately conserved across genotypes
+  min_region_length: 200
+
+primer:
+  tm_min: 63.0                   # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0                   # NDV M gene ~47% GC; wide window for inter-genotype diversity
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/ndv_M_gene
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config notes.**
+
+- `primer.tm_min: 63.0` -- same one-step RT-LAMP rationale as Recipes 11
+  (PRRSV), 12 (AIV), and 14 (FMDV).  NDV is a negative-sense ssRNA virus;
+  the RT enzyme must remain co-active with Bst polymerase at 63-65 degC.
+- `conservation.entropy_threshold: 0.30` -- the M gene is under structural
+  constraint (matrix-layer assembly drives the threshold lower than dsrB/mcrA
+  at 0.35), but RNA-virus synonymous drift across 20+ genotypes keeps it
+  above the housekeeping-gene limit (rpoB < 0.20).
+- `off_targets.min_identity_threshold: 0.85` -- tighter than the bacterial
+  default (0.80) because avian paramyxoviruses (APMV-2, APMV-3) share
+  paramyxovirus structural motifs with NDV.  A 0.85 threshold catches
+  potential cross-reactivity before it reaches the lab.
+- `gc_min/gc_max: 40-60%` -- the NDV M gene is ~47% GC in the OIE LaSota
+  reference (Class II genotype II).  Velogenic outbreak strains (genotypes
+  VII, XXI) shift GC by +/- 5 percentage points; the 20-unit window covers
+  this diversity without being so wide that non-specific primers are accepted.
+
+**Off-target panel.** Avian paramyxoviruses and co-circulating respiratory
+pathogens from cloacal or oropharyngeal swabs:
+
+| File | Source | Why |
+|---|---|---|
+| `apmv2.fasta` | Avian paramyxovirus type 2 (Yucaipa) | Closest APMV relative; ~40% M-gene aa identity; must not co-flag |
+| `apmv3.fasta` | Avian paramyxovirus type 3 (turkey paramyxovirus) | Second-closest APMV relative |
+| `infectious_bronchitis_virus.fasta` | NC_001451.1 | Avian coronavirus; common respiratory co-circulator |
+| `avian_metapneumovirus.fasta` | NC_007652.1 | AMPV; co-circulates with NDV and HPAI |
+| `influenza_a_h5n1.fasta` | representative H5N1 clade 2.3.4.4b | Co-circulates in poultry outbreaks; separate assay (Recipe 12) |
+| `gallus_gallus_fragment.fasta` | GalGal6 chr1 subset | Host DNA from cloacal or oropharyngeal swab |
+
+**Expected output.** The M gene has a well-conserved central block (~340-780
+nt of the ~1077 nt M CDS) that aligns robustly across Class I and Class II
+genotypes.  Top-scoring sets should localise to this block with zero flagged
+hits against APMV-2, APMV-3, IBV, and AMPV.  Sensitivity check: if fewer
+than 2 conserved windows appear, loosen `entropy_threshold` to 0.35 -- highly
+virulent outbreak strains in the genotype VII/XXI clade have elevated
+synonymous divergence relative to classical strains.
+
+**Verify RT-LAMP readiness.**
+
+```bash
+lamp-forge rt-check \
+  --input results/ndv_M_gene/primer_sets.json \
+  --na-type rna \
+  --out-csv results/ndv_M_gene/rt_check.csv
+```
+
+Sets marked **NOT OPTIMIZED** have at least one core primer (F3/B3/FIP/BIP)
+below 63.0 degC.  Because `primer.tm_min: 63.0` is already set in this
+config, re-running is usually not required, but confirm before ordering.
+
+**Add NDV to the avian farm-biosecurity panel.**  Recipe 12 designs an AIV
+M-gene assay.  Adding NDV creates a complete avian respiratory 2-plex (or
+a 4-plex when PRRSV and ASFV are included):
+
+```bash
+# 1. Design AIV and NDV independently.
+lamp-forge run --config config/influenza_a_M.yaml
+lamp-forge run --config config/ndv_M_gene.yaml
+
+# 2. Screen for cross-assay primer compatibility.
+lamp-forge panel \
+  --set IAV=results/influenza_a_M/primer_sets.json \
+  --set NDV=results/ndv_M_gene/primer_sets.json \
+  --top-per-target 5 \
+  --dimer-dg-threshold -5.0 \
+  --out results/avian_respiratory_panel
+
+# 3. Generate the pipetting sheet (2 RNA targets = 88 uM minimum; 100 uM stocks suffice).
+lamp-forge pool \
+  --panel results/avian_respiratory_panel/panel.json \
+  --stock-conc 100 \
+  --total-volume 500 \
+  --out results/avian_respiratory_panel/pool_sheet.csv
+
+# 4. Export to IDT for ordering.
+lamp-forge export \
+  --input results/ndv_M_gene/primer_sets.json \
+  --format idt \
+  --target-label NDV_M \
+  --out orders/ndv_M_idt_order.csv
+```
+
+**Estimate LOD before ordering** (cloacal swab in 1 mL PBS, 50% RNA
+extraction, 100 uL eluate, 5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 1000 \
+  --efficiency 0.50 \
+  --eluate-volume 100 \
+  --reaction-input 5
+```
+
+Effective sample = 1000 x 0.50 x (5/100) = 25 uL per reaction ->
+LOD_95 approx 120 copies/mL of PBS.  NDV shedding in acutely infected
+chickens reaches 10^6-10^9 EID50/mL in cloacal swabs -- orders-of-magnitude
+above the achievable LOD.  For sentinel surveillance of subclinical shedding,
+increase sample volume to 2 mL or double the reaction input (10 uL) to push
+LOD_95 below 60 copies/mL.
+
+**Biosafety note.**  Velogenic NDV (vNDV, Class II genotype V and VII) is a
+USDA-regulated select agent (7 CFR Part 331) in the United States.  Wet-lab
+validation of an NDV RT-LAMP assay must use inactivated positive controls
+(heat-inactivated virus or synthetic RNA standards) unless performed in a
+certified facility with appropriate select-agent registration.  The in silico
+primer design produced by this pipeline does not require select-agent
+handling.
+
+A positive result in the field should trigger immediate reporting to the
+national veterinary authority and confirmatory testing at a WOAH Reference
+Laboratory (e.g. USDA APHIS NVSL, Plum Island Animal Disease Center).
+Position this assay as a **triage/screening** tool, not the confirmatory test.
+
+**Multiplex with ASFV, PRRSV, and AIV** for a complete mixed-species farm
+biosecurity panel:
+
+```bash
+lamp-forge panel \
+  --set IAV=results/influenza_a_M/primer_sets.json \
+  --set NDV=results/ndv_M_gene/primer_sets.json \
+  --set PRRSV=results/prrsv_ORF7/primer_sets.json \
+  --set ASFV=results/asfv_p72/primer_sets.json \
+  --top-per-target 5 \
+  --out results/farm_biosecurity_4plex
+```
+
+Note: PRRSV and NDV are both RNA viruses but from different families
+(Arterivirus vs. Paramyxovirus), and ASFV is a DNA virus -- the pooled
+reaction uses a one-step RT + LAMP master mix (e.g. NEB WarmStart LAMP Kit
+2.0 + WarmStart RTx), which amplifies both RNA and DNA targets in a single
+tube at 63-65 degC.
+
+**References.**
+
+- Wise MG, Suarez DL, Seal BS et al. (2004). Development of a real-time
+  reverse-transcription PCR for detection of Newcastle disease virus RNA in
+  clinical samples. *J Clin Microbiol* 42:329-338.
+  doi:10.1128/JCM.42.1.329-338.2004
+- Tsai HJ, Chang KH, Tseng CH et al. (2016). Loop-mediated isothermal
+  amplification assay for detection of Newcastle disease virus. *J Virol
+  Methods* 235:88-95. doi:10.1016/j.jviromet.2016.05.013
+- Dimitrov KM, Afonso CL, Yu Q & Miller PJ (2017). Newcastle disease vaccines
+  -- A solved problem or a continuous challenge? *Vet Microbiol* 206:126-136.
+  doi:10.1016/j.vetmic.2016.12.019
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

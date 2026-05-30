@@ -1,0 +1,79 @@
+# LAMP-Forge config: Newcastle Disease Virus (NDV) M gene RT-LAMP
+# ============================================================================
+# Target: Broad NDV detection via the M (matrix protein) gene
+# Why this target: Newcastle Disease Virus (NDV; Avian orthoavulavirus 1) is
+# one of the most significant poultry pathogens worldwide: velogenic strains
+# cause near-100% flock mortality and are WOAH-listed.  Rapid on-farm detection
+# is critical -- a portable RT-LAMP result in under 60 minutes can support a
+# quarantine decision before birds move to adjacent facilities.
+#
+# The M gene (~1077 nt CDS) encodes the matrix protein and is the most
+# conserved coding region across all Class I and Class II genotypes (I-XXI).
+# It is the basis of WHO/OIE-endorsed real-time RT-PCR assays and several
+# published RT-LAMP assays (Wise et al. 2004; Tsai et al. 2016).  Unlike the
+# F (fusion) gene, which varies between pathotypes (velogenic / mesogenic /
+# lentogenic), the M gene provides broad inclusivity independent of pathotype --
+# the correct behaviour for a first-pass detection assay.
+#
+# NDV is a negative-sense ssRNA paramyxovirus; detection requires RT-LAMP.
+# One-step RT-LAMP (Bst 2.0 WarmStart + NEB RTx) at 63-65 degC delivers a
+# yes/no result in under 30 minutes, fully compatible with BioVind portable
+# platforms.  Validate RT-LAMP readiness after design:
+#   lamp-forge rt-check --input results/ndv_M_gene/primer_sets.json --na-type rna
+#
+# NDV co-circulates with PRRSV (swine), AIV (Recipe 12), and ASFV (Recipe 7)
+# in high-density livestock areas, and is a clinical off-target in influenza A
+# assays.  Adding NDV to the farm biosecurity panel (Recipe 12) converts a 3-plex
+# into a complete 4-target avian respiratory screen.
+#
+# Multiplexing with other farm-biosecurity targets:
+#   lamp-forge panel \
+#     --set NDV=results/ndv_M_gene/primer_sets.json \
+#     --set IAV=results/influenza_a_M/primer_sets.json \
+#     --set PRRSV=results/prrsv_ORF7/primer_sets.json \
+#     --set ASFV=results/asfv_p72/primer_sets.json \
+#     --top-per-target 5 \
+#     --out results/farm_biosecurity_4plex_with_NDV
+# ============================================================================
+
+target:
+  name: ndv_M_gene
+  taxon_id: 11234              # Newcastle disease virus (Avian orthoavulavirus 1)
+  gene: M                      # matrix protein; most conserved across all genotypes
+  max_sequences: 35            # span Class I (genotype 1) + Class II genotypes I-XXI
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Key avian paramyxoviruses and co-circulating respiratory pathogens:
+  #   apmv2.fasta                  - Avian paramyxovirus type 2; closest APMV relative
+  #   apmv3.fasta                  - Avian paramyxovirus type 3 (turkey paramyxovirus)
+  #   infectious_bronchitis_virus.fasta - NC_001451.1; avian coronavirus, same niche
+  #   avian_metapneumovirus.fasta  - NC_007652.1; respiratory, co-circulates with NDV
+  #   influenza_a_h5n1.fasta       - Co-circulates in poultry outbreaks
+  #   gallus_gallus_fragment.fasta - GalGal6 chr1 subset; host DNA from cloacal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # tight -- APMV-2/3 share paramyxovirus family; prevent false flags
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25              # RNA virus: narrower window catches constrained blocks
+  entropy_threshold: 0.30     # M gene is moderately conserved; looser than housekeeping genes
+  min_region_length: 200       # M CDS is ~1077 nt -- expect 2-4 conserved windows
+
+primer:
+  tm_min: 63.0                 # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0                 # NDV M gene ~47% GC; wide window for inter-genotype diversity
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/ndv_M_gene
+  top_n: 10
+  generate_html: true
+  generate_csv: true
