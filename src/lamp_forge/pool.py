@@ -96,9 +96,7 @@ class PoolingParams:
     def __post_init__(self) -> None:
         """Validate parameter ranges."""
         if self.stock_conc_um <= 0.0:
-            raise ValueError(
-                f"stock_conc_um must be positive, got {self.stock_conc_um!r}"
-            )
+            raise ValueError(f"stock_conc_um must be positive, got {self.stock_conc_um!r}")
         if self.total_pool_volume_ul <= 0.0:
             raise ValueError(
                 f"total_pool_volume_ul must be positive, got {self.total_pool_volume_ul!r}"

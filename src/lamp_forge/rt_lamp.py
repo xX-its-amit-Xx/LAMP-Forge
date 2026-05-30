@@ -81,9 +81,7 @@ class RtLampParams:
 
     def __post_init__(self) -> None:  # noqa: D105
         if self.rt_min_tm >= self.rt_max_tm:
-            raise ValueError(
-                f"rt_min_tm ({self.rt_min_tm}) must be < rt_max_tm ({self.rt_max_tm})"
-            )
+            raise ValueError(f"rt_min_tm ({self.rt_min_tm}) must be < rt_max_tm ({self.rt_max_tm})")
         if self.loop_min_tm > self.rt_min_tm:
             raise ValueError(
                 f"loop_min_tm ({self.loop_min_tm}) must be <= rt_min_tm ({self.rt_min_tm})"
@@ -177,9 +175,7 @@ def check_primer_set_for_rt_lamp(
         elif tm < min_tm:
             if not is_loop:
                 n_core_below_rt_min += 1
-            warnings_out.append(
-                f"{role} Tm {tm:.1f} degC < {min_tm:.1f} degC RT-LAMP minimum"
-            )
+            warnings_out.append(f"{role} Tm {tm:.1f} degC < {min_tm:.1f} degC RT-LAMP minimum")
         else:
             warnings_out.append(
                 f"{role} Tm {tm:.1f} degC > {params.rt_max_tm:.1f} degC RT-LAMP maximum"
@@ -233,10 +229,7 @@ def check_primer_sets_for_rt_lamp(
         :class:`RtLampCheckResult` for each set, in input order.
     """
     subset = sets_data if top_n is None else sets_data[:top_n]
-    return [
-        check_primer_set_for_rt_lamp(s, target_na=target_na, params=params)
-        for s in subset
-    ]
+    return [check_primer_set_for_rt_lamp(s, target_na=target_na, params=params) for s in subset]
 
 
 def write_rt_check_csv(results: list[RtLampCheckResult], path: Path) -> None:
@@ -249,24 +242,28 @@ def write_rt_check_csv(results: list[RtLampCheckResult], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow([
-            "set_id",
-            "target_na",
-            "n_primers",
-            "n_in_rt_range",
-            "n_core_below_rt_min",
-            "is_rt_optimized",
-            "warnings",
-            "recommended_action",
-        ])
+        writer.writerow(
+            [
+                "set_id",
+                "target_na",
+                "n_primers",
+                "n_in_rt_range",
+                "n_core_below_rt_min",
+                "is_rt_optimized",
+                "warnings",
+                "recommended_action",
+            ]
+        )
         for r in results:
-            writer.writerow([
-                r.set_id,
-                str(r.target_na),
-                r.n_primers,
-                r.n_in_rt_range,
-                r.n_core_below_rt_min,
-                r.is_rt_optimized,
-                "; ".join(r.warnings),
-                r.recommended_action,
-            ])
+            writer.writerow(
+                [
+                    r.set_id,
+                    str(r.target_na),
+                    r.n_primers,
+                    r.n_in_rt_range,
+                    r.n_core_below_rt_min,
+                    r.is_rt_optimized,
+                    "; ".join(r.warnings),
+                    r.recommended_action,
+                ]
+            )

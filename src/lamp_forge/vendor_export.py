@@ -242,8 +242,7 @@ def rows_from_json_data(
                     name=_primer_name(set_id, role, target_label),
                     sequence=sequence,
                     scale=scale_override or _DEFAULT_SCALE.get(role, "100nm"),
-                    purification=purification_override
-                    or _DEFAULT_PURIFICATION.get(role, "HPLC"),
+                    purification=purification_override or _DEFAULT_PURIFICATION.get(role, "HPLC"),
                     role=role,
                     set_id=set_id,
                     tm_celsius=tm,
@@ -291,9 +290,7 @@ def write_twist_csv(rows: list[VendorRow], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow(
-            ["Name", "Sequence", "Scale", "Purification", "Tm_celsius", "Length"]
-        )
+        writer.writerow(["Name", "Sequence", "Scale", "Purification", "Tm_celsius", "Length"])
         for r in rows:
             writer.writerow(
                 [

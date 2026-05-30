@@ -139,8 +139,12 @@ class TestCheckPrimerSetForRtLamp:
 
     def test_loop_primer_below_loop_min_does_not_affect_core_count(self) -> None:
         d = _make_set_dict(
-            f3_tm=64.0, b3_tm=64.0, fip_tm=64.0, bip_tm=64.0,
-            lf_tm=59.0, lb_tm=62.0,
+            f3_tm=64.0,
+            b3_tm=64.0,
+            fip_tm=64.0,
+            bip_tm=64.0,
+            lf_tm=59.0,
+            lb_tm=62.0,
         )
         result = check_primer_set_for_rt_lamp(d)
         assert result.n_core_below_rt_min == 0
@@ -170,15 +174,13 @@ class TestCheckPrimerSetForRtLamp:
 
     def test_n_in_rt_range_counts_correctly(self) -> None:
         # All 4 core in range, 2 loops in range (62.0 >= 60.0) => 6 in range
-        d = _make_set_dict(f3_tm=64.0, b3_tm=64.0, fip_tm=64.0, bip_tm=64.0,
-                           lf_tm=62.0, lb_tm=62.0)
+        d = _make_set_dict(f3_tm=64.0, b3_tm=64.0, fip_tm=64.0, bip_tm=64.0, lf_tm=62.0, lb_tm=62.0)
         result = check_primer_set_for_rt_lamp(d)
         assert result.n_in_rt_range == 6
 
     def test_n_in_rt_range_excludes_out_of_range(self) -> None:
         # f3 is below core min, so 5 in range
-        d = _make_set_dict(f3_tm=61.0, b3_tm=64.0, fip_tm=64.0, bip_tm=64.0,
-                           lf_tm=62.0, lb_tm=62.0)
+        d = _make_set_dict(f3_tm=61.0, b3_tm=64.0, fip_tm=64.0, bip_tm=64.0, lf_tm=62.0, lb_tm=62.0)
         result = check_primer_set_for_rt_lamp(d)
         assert result.n_in_rt_range == 5
 
@@ -268,9 +270,7 @@ class TestCheckPrimerSetsForRtLamp:
         assert len(results) == 3
 
     def test_target_na_propagated(self) -> None:
-        results = check_primer_sets_for_rt_lamp(
-            self._make_sets(), target_na=TargetNucleicAcid.DNA
-        )
+        results = check_primer_sets_for_rt_lamp(self._make_sets(), target_na=TargetNucleicAcid.DNA)
         assert all(r.target_na is TargetNucleicAcid.DNA for r in results)
 
     def test_correct_sets_are_optimized(self) -> None:
@@ -388,8 +388,10 @@ class TestRtCheckCli:
             cli,
             [
                 "rt-check",
-                "--input", str(self._make_primer_sets_json(tmp_path)),
-                "--na-type", "rna",
+                "--input",
+                str(self._make_primer_sets_json(tmp_path)),
+                "--na-type",
+                "rna",
             ],
             obj={},
         )
@@ -419,8 +421,10 @@ class TestRtCheckCli:
             cli,
             [
                 "rt-check",
-                "--input", str(self._make_primer_sets_json(tmp_path)),
-                "--na-type", "dna",
+                "--input",
+                str(self._make_primer_sets_json(tmp_path)),
+                "--na-type",
+                "dna",
             ],
             obj={},
         )
@@ -438,8 +442,10 @@ class TestRtCheckCli:
             cli,
             [
                 "rt-check",
-                "--input", str(self._make_primer_sets_json(tmp_path)),
-                "--out-csv", str(out),
+                "--input",
+                str(self._make_primer_sets_json(tmp_path)),
+                "--out-csv",
+                str(out),
             ],
             obj={},
         )
@@ -456,8 +462,10 @@ class TestRtCheckCli:
             cli,
             [
                 "rt-check",
-                "--input", str(self._make_primer_sets_json(tmp_path)),
-                "--top-n", "1",
+                "--input",
+                str(self._make_primer_sets_json(tmp_path)),
+                "--top-n",
+                "1",
             ],
             obj={},
         )

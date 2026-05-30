@@ -76,9 +76,7 @@ class TestFmdvConfig:
         assert fmdv_cfg.min_identity_threshold >= 0.85
         assert fmdv_cfg.min_coverage_threshold >= 0.85
 
-    def test_conservation_entropy_allows_rna_virus_drift(
-        self, fmdv_cfg: PipelineConfig
-    ) -> None:
+    def test_conservation_entropy_allows_rna_virus_drift(self, fmdv_cfg: PipelineConfig) -> None:
         """RNA viruses vary more than bacteria; entropy threshold should be >= 0.25."""
         assert fmdv_cfg.entropy_threshold >= 0.25
 
@@ -112,9 +110,7 @@ class TestSrbDsrBConfig:
         """Anchor genus for broad SRB design is Desulfovibrio (taxon 872)."""
         assert srb_cfg.taxon_id == 872
 
-    def test_entropy_threshold_allows_polyphyletic_diversity(
-        self, srb_cfg: PipelineConfig
-    ) -> None:
+    def test_entropy_threshold_allows_polyphyletic_diversity(self, srb_cfg: PipelineConfig) -> None:
         """dsrB spans five phyla; entropy threshold must be >= 0.30 bits."""
         assert srb_cfg.entropy_threshold >= 0.30, (
             "dsrB is functionally but not tightly sequence-conserved across SRB phyla; "
@@ -125,9 +121,7 @@ class TestSrbDsrBConfig:
         """Broad SRB diversity requires a large sequence set."""
         assert srb_cfg.max_sequences >= 30
 
-    def test_gc_range_covers_proteobacteria_and_firmicutes(
-        self, srb_cfg: PipelineConfig
-    ) -> None:
+    def test_gc_range_covers_proteobacteria_and_firmicutes(self, srb_cfg: PipelineConfig) -> None:
         """GC range must be broad enough for SRB genera spanning ~45-60% GC."""
         assert srb_cfg.gc_min <= 40.0
         assert srb_cfg.gc_max >= 60.0
@@ -164,9 +158,7 @@ class TestMethanogenMcrAConfig:
         """Anchor taxon is Archaea domain (NCBI taxon 2157) for broad coverage."""
         assert mcra_cfg.taxon_id == 2157
 
-    def test_entropy_threshold_allows_order_level_diversity(
-        self, mcra_cfg: PipelineConfig
-    ) -> None:
+    def test_entropy_threshold_allows_order_level_diversity(self, mcra_cfg: PipelineConfig) -> None:
         """mcrA spans five methanogen orders; entropy threshold must be >= 0.30."""
         assert mcra_cfg.entropy_threshold >= 0.30, (
             "mcrA is under catalytic constraint but diverges across archaeal orders; "

@@ -69,21 +69,15 @@ class ExtractionParams:
 
     def __post_init__(self) -> None:  # noqa: D105
         if self.sample_volume_ul <= 0.0:
-            raise ValueError(
-                f"sample_volume_ul must be positive, got {self.sample_volume_ul!r}"
-            )
+            raise ValueError(f"sample_volume_ul must be positive, got {self.sample_volume_ul!r}")
         if not (0.0 < self.extraction_efficiency <= 1.0):
             raise ValueError(
                 f"extraction_efficiency must be in (0, 1], got {self.extraction_efficiency!r}"
             )
         if self.eluate_volume_ul <= 0.0:
-            raise ValueError(
-                f"eluate_volume_ul must be positive, got {self.eluate_volume_ul!r}"
-            )
+            raise ValueError(f"eluate_volume_ul must be positive, got {self.eluate_volume_ul!r}")
         if self.reaction_input_ul <= 0.0:
-            raise ValueError(
-                f"reaction_input_ul must be positive, got {self.reaction_input_ul!r}"
-            )
+            raise ValueError(f"reaction_input_ul must be positive, got {self.reaction_input_ul!r}")
         if self.reaction_input_ul > self.eluate_volume_ul:
             raise ValueError(
                 f"reaction_input_ul ({self.reaction_input_ul}) must not exceed "
@@ -150,9 +144,7 @@ def poisson_lod(detection_probability: float) -> float:
         ValueError: If ``detection_probability`` is not in (0, 1).
     """
     if not (0.0 < detection_probability < 1.0):
-        raise ValueError(
-            f"detection_probability must be in (0, 1), got {detection_probability!r}"
-        )
+        raise ValueError(f"detection_probability must be in (0, 1), got {detection_probability!r}")
     return -math.log(1.0 - detection_probability)
 
 

@@ -405,9 +405,7 @@ class TestPoolCli:
                     "target": t,
                     "set_id": "region_01_set_001",
                     "composite_score": 0.9,
-                    "oligos": [
-                        {"role": r, "sequence": seqs[r]} for r in _ROLE_ORDER
-                    ],
+                    "oligos": [{"role": r, "sequence": seqs[r]} for r in _ROLE_ORDER],
                 }
             )
         payload = {
@@ -482,9 +480,12 @@ class TestPoolCli:
             cli,
             [
                 "pool",
-                "--panel", str(panel),
-                "--stock-conc", "200",
-                "--out", str(out),
+                "--panel",
+                str(panel),
+                "--stock-conc",
+                "200",
+                "--out",
+                str(out),
             ],
             obj={},
         )
@@ -506,8 +507,10 @@ class TestPoolCli:
             cli,
             [
                 "pool",
-                "--panel", str(panel),
-                "--stock-conc", "100",
+                "--panel",
+                str(panel),
+                "--stock-conc",
+                "100",
             ],
             obj={},
         )
@@ -526,9 +529,12 @@ class TestPoolCli:
             cli,
             [
                 "pool",
-                "--panel", str(panel),
-                "--stock-conc", "200",
-                "--out", str(out),
+                "--panel",
+                str(panel),
+                "--stock-conc",
+                "200",
+                "--out",
+                str(out),
             ],
             obj={},
         )
@@ -552,9 +558,12 @@ class TestPoolCli:
             cli,
             [
                 "pool",
-                "--panel", str(panel),
-                "--total-volume", "1000",
-                "--out", str(out),
+                "--panel",
+                str(panel),
+                "--total-volume",
+                "1000",
+                "--out",
+                str(out),
             ],
             obj={},
         )

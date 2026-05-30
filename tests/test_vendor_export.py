@@ -101,28 +101,36 @@ class TestPrimerToVendorRow:
     def test_scale_override(self) -> None:
         ps = _make_set()
         row = primer_to_vendor_row(
-            ps.f3, ps, scale_override="250nm"  # type: ignore[attr-defined, arg-type]
+            ps.f3,
+            ps,
+            scale_override="250nm",  # type: ignore[attr-defined, arg-type]
         )
         assert row.scale == "250nm"
 
     def test_purification_override(self) -> None:
         ps = _make_set()
         row = primer_to_vendor_row(
-            ps.fip, ps, purification_override="PAGE"  # type: ignore[attr-defined, arg-type]
+            ps.fip,
+            ps,
+            purification_override="PAGE",  # type: ignore[attr-defined, arg-type]
         )
         assert row.purification == "PAGE"
 
     def test_target_label_included_in_name(self) -> None:
         ps = _make_set()
         row = primer_to_vendor_row(
-            ps.f3, ps, target_label="dsrB SRB"  # type: ignore[attr-defined, arg-type]
+            ps.f3,
+            ps,
+            target_label="dsrB SRB",  # type: ignore[attr-defined, arg-type]
         )
         assert row.name.startswith("dsrB_SRB_")
 
     def test_spaces_in_label_replaced(self) -> None:
         ps = _make_set()
         row = primer_to_vendor_row(
-            ps.f3, ps, target_label="my target"  # type: ignore[attr-defined, arg-type]
+            ps.f3,
+            ps,
+            target_label="my target",  # type: ignore[attr-defined, arg-type]
         )
         assert " " not in row.name
 
@@ -251,7 +259,11 @@ class TestWriteIdtCsv:
         write_idt_csv(rows, out)
         with out.open() as fh:
             data_rows = list(csv.DictReader(fh))
-        chimeric = {r["Purification"] for r in data_rows if r["Name"].endswith("FIP") or r["Name"].endswith("BIP")}
+        chimeric = {
+            r["Purification"]
+            for r in data_rows
+            if r["Name"].endswith("FIP") or r["Name"].endswith("BIP")
+        }
         assert chimeric == {"HPLC"}
 
     def test_outer_primers_get_std_purification(self, tmp_path: Path) -> None:
@@ -261,7 +273,11 @@ class TestWriteIdtCsv:
         write_idt_csv(rows, out)
         with out.open() as fh:
             data_rows = list(csv.DictReader(fh))
-        outer = {r["Purification"] for r in data_rows if r["Name"].endswith("F3") or r["Name"].endswith("B3")}
+        outer = {
+            r["Purification"]
+            for r in data_rows
+            if r["Name"].endswith("F3") or r["Name"].endswith("B3")
+        }
         assert outer == {"STD"}
 
 
@@ -534,9 +550,12 @@ class TestExportCli:
             cli,
             [
                 "export",
-                "--input", str(input_json),
-                "--out", str(out),
-                "--target-label", "dsrB_SRB",
+                "--input",
+                str(input_json),
+                "--out",
+                str(out),
+                "--target-label",
+                "dsrB_SRB",
             ],
             obj={},
         )
@@ -572,9 +591,12 @@ class TestExportCli:
             cli,
             [
                 "export",
-                "--input", str(input_json),
-                "--out", str(out),
-                "--scale", "250nm",
+                "--input",
+                str(input_json),
+                "--out",
+                str(out),
+                "--scale",
+                "250nm",
             ],
             obj={},
         )

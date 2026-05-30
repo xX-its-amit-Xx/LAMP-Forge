@@ -361,13 +361,12 @@ def lod(
 
     click.echo(
         f"Extraction chain: {sample_volume_ul:.0f} uL sample, "
-        f"{extraction_efficiency*100:.0f}% efficiency, "
+        f"{extraction_efficiency * 100:.0f}% efficiency, "
         f"{eluate_volume_ul:.0f} uL eluate, "
         f"{reaction_input_ul:.1f} uL to reaction"
     )
     click.echo(
-        f"Effective sample volume per reaction: "
-        f"{params.copies_per_rxn_per_copy_per_ul:.2f} uL"
+        f"Effective sample volume per reaction: {params.copies_per_rxn_per_copy_per_ul:.2f} uL"
     )
     click.echo("")
     header = f"{'P(detect)':>12}  {'lambda (copies/rxn)':>20}  {'LOD (copies/mL)':>18}"
@@ -634,10 +633,7 @@ def rt_check(
 
     col_id = max(len(r.set_id) for r in results) if results else 10
     col_id = max(col_id, 8)
-    header = (
-        f"{'Set ID':<{col_id}}  {'N':>2}  {'In-range':>8}  "
-        f"{'Core-low':>8}  Status"
-    )
+    header = f"{'Set ID':<{col_id}}  {'N':>2}  {'In-range':>8}  {'Core-low':>8}  Status"
     click.echo(header)
     click.echo("-" * len(header))
 
@@ -793,14 +789,8 @@ def pool(
             f"{e.vol_stock_ul:>9.3f}"
         )
     click.echo("-" * len(header))
-    click.echo(
-        f"{'Nuclease-free water':<{col_t + 5 + col_n + 25}}  "
-        f"{plan.water_volume_ul:>9.3f}"
-    )
-    click.echo(
-        f"{'TOTAL':<{col_t + 5 + col_n + 25}}  "
-        f"{plan.total_pool_volume_ul:>9.3f}"
-    )
+    click.echo(f"{'Nuclease-free water':<{col_t + 5 + col_n + 25}}  {plan.water_volume_ul:>9.3f}")
+    click.echo(f"{'TOTAL':<{col_t + 5 + col_n + 25}}  {plan.total_pool_volume_ul:>9.3f}")
 
 
 @cli.command(name="validate")
@@ -851,7 +841,9 @@ def validate(config_path: Path, skip_dir_check: bool) -> None:
 
     click.secho(f"Config OK -- {config.target_name}", fg="green")
     click.echo(f"  Target:        {config.target_name}")
-    click.echo(f"  Source:        {source}, gene={gene_label}, max {config.max_sequences} sequences")
+    click.echo(
+        f"  Source:        {source}, gene={gene_label}, max {config.max_sequences} sequences"
+    )
     click.echo(
         f"  Off-target:    {config.off_target_dir} "
         f"(identity >={config.min_identity_threshold:.0%}, "
