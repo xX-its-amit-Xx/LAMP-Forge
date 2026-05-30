@@ -1,0 +1,138 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: Acid-Producing Bacteria (APB) -- oilfield MIC monitoring
+#         via formyltetrahydrofolate synthetase (fthfs)
+#
+# Why this target:
+#   Acid-producing bacteria (APB), principally homoacetogens, reduce CO2 to
+#   acetic acid via the Wood-Ljungdahl pathway.  In oilfield produced water
+#   and pipeline biofilm they create two compounding MIC hazards:
+#     1. pH depression -- acetic acid production (down to pH 4-5) strips the
+#        FeCO3 protective scale that otherwise passivates carbon-steel.
+#     2. Acetate/H2 donation to SRB -- the acetate and H2 end-products of
+#        homoacetogenesis are the primary electron donors for sulfate-reducing
+#        bacteria (SRB), accelerating H2S production.  APB + SRB in the same
+#        biofilm create a corrosion-amplifying syntrophic loop.
+#   Monitoring APB completes the four-guild MIC panel alongside SRB (dsrB),
+#   methanogens (mcrA), and IRB (omcA).  A positive APB signal in produced
+#   water increases the urgency of SRB-biocide treatment, because acetate
+#   provision amplifies sulfidogenesis.
+#
+# Gene marker -- fthfs (formyltetrahydrofolate synthetase; EC 6.3.4.3):
+#   fthfs encodes the enzyme that activates formate to N10-formyl-THF, the
+#   first committed step of the Wood-Ljungdahl pathway.  It is:
+#     - Present in all homoacetogens, absent in most non-acetogens.
+#     - Phylogenetically restricted: fthfs is a reliable functional-guild
+#       marker distinguishing homoacetogens from other fermenters that share
+#       oilfield niches (Clostridium acetobutylicum has pta/ack but not fthfs).
+#     - ~1.7 kb CDS with conserved ATP-grasp and GHMP-kinase motifs that
+#       provide two or three LAMP-accessible conserved windows.
+#   Published use as an environmental-monitoring marker:
+#     Hunger S et al. (2011) Environ Microbiol 13:2228-2238.
+#     Leaphart AB & Lovell CR (2001) Appl Environ Microbiol 67:2720-2728.
+#
+# Taxon anchor:
+#   Moorella genus (NCBI taxon 44417) -- thermophilic homoacetogens dominant
+#   in high-temperature oilfield reservoirs (50-80 degC; Moorella thermoacetica
+#   grows optimally at 55 degC).  Supplement with Acetobacterium accessions for
+#   mesophilic surface-facility coverage.
+#
+# BioVind use-case:
+#   Fourth channel in the oilfield MIC/souring panel alongside
+#   config/srb_dsrB.yaml, config/methanogen_mcrA.yaml, and config/irb_omcA.yaml.
+#   Run lamp-forge panel across all four primer-set JSONs to screen cross-assay
+#   compatibility before ordering.
+#   Result interpretation:
+#     APB+/SRB+ -- active synergistic MIC loop; biocide review urgent
+#     APB+/SRB- -- acid-only corrosion risk; SRB may emerge if conditions shift
+#     APB-/SRB+ -- SRB using alternative electron donors; standard souring risk
+#
+# Key parameter notes:
+#   - conservation.entropy_threshold: 0.30 -- fthfs is under catalytic
+#     constraint (ATP-grasp and GHMP-kinase motifs are near-invariant) but
+#     diverges between genera (Moorella vs Acetobacterium vs Sporomusa share
+#     ~55-70% nt identity).  0.30 bits exploits the conserved motif blocks
+#     without being too strict for a polyphyletic functional gene.
+#   - gc_min/gc_max: 40-65% -- Moorella GC is ~55%, Acetobacterium ~44%,
+#     Sporomusa ~50%.  The wide window (40-65%) ensures primer candidates
+#     can be found across the genus-level diversity in the sequence set.
+#   - tm_min: 60.0 -- fthfs is a chromosomal DNA target; standard LAMP
+#     temperature, NOT the RT-LAMP 63 degC floor.
+#   - target.accessions: add CDS records for Acetobacterium woodii DSM 1030
+#     (CP002987.1 region), Sporomusa sphaeroides (CP033079.1 region), and
+#     Thermoanaerobacter kivui (CP012169.1 region) for mesophilic coverage.
+#
+# References:
+#   Hunger S, Schmidt O, Hilgarth M et al. (2011) Competing formate- and
+#   carbon dioxide-utilizing prokaryotes in an anoxic methane-emitting fen soil.
+#   Environ Microbiol 13:2228-2238. doi:10.1111/j.1462-2920.2011.02491.x
+#   Leaphart AB & Lovell CR (2001) Recovery and analysis of fthfs gene
+#   sequences as markers for acetogenic bacteria in soil and sediment microbial
+#   communities. Appl Environ Microbiol 67:2720-2728. doi:10.1128/AEM.67.6.2720
+#   Pierce E, Xie G, Barabote RD et al. (2008) The complete genome sequence of
+#   Moorella thermoacetica. Environ Microbiol 10:2550-2573.
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63.
+# ============================================================================
+
+target:
+  name: apb_fthfs_oilfield
+  taxon_id: 44417            # Moorella genus -- thermophilic homoacetogens
+  accessions:
+    # Supplement Moorella sequences with mesophilic homoacetogen CDS records.
+    # Recommended additions (NCBI CDS accessions for fthfs):
+    #   Acetobacterium woodii DSM 1030  -- mesophilic, ubiquitous in oilfields
+    #   Sporomusa sphaeroides           -- common environmental homoacetogen
+    #   Thermoanaerobacter kivui        -- thermophilic, high-temp reservoirs
+    # Leave empty [] for a Moorella-genus taxon-driven test run.
+    []
+  gene: fthfs                # formyltetrahydrofolate synthetase; Wood-Ljungdahl marker
+  max_sequences: 30          # span Moorella species diversity; add Acetobacterium above
+  email: you@your-inst.edu   # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Critical off-target differentials for an oilfield APB assay:
+  #
+  #   desulfovibrio_vulgaris.fasta       -- dominant SRB in oilfields; carries
+  #                                         genes for the THF pathway but NOT
+  #                                         the full Wood-Ljungdahl fthfs;
+  #                                         must not co-flag in the APB channel
+  #   methanobacterium_formicicum.fasta  -- formate-using methanogen; formate
+  #                                         metabolism shares intermediate steps
+  #                                         with homoacetogenesis; key specificity test
+  #   clostridium_acetobutylicum.fasta   -- fermentative Clostridium with pta/ack
+  #                                         but not Wood-Ljungdahl fthfs; must
+  #                                         not cross-flag (it is a non-acetogen
+  #                                         APB by traditional culture methods)
+  #   shewanella_oneidensis.fasta        -- IRB; must not co-flag in APB channel
+  #   pseudomonas_aeruginosa.fasta       -- ubiquitous oilfield biofilm bacterium;
+  #                                         no Wood-Ljungdahl pathway
+  #   escherichia_coli.fasta             -- common contamination; no fthfs
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.30        # fthfs: ATP-grasp and GHMP-kinase motifs are
+                                 # conserved; inter-genus synonymous divergence
+                                 # is substantial, so 0.30 is the practical floor
+  min_region_length: 220         # LAMP needs ~200 bp; 220 ensures margin for F3/B3
+
+primer:
+  tm_min: 60.0                   # DNA target -- standard LAMP Tm floor (not RT-LAMP)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0                   # Acetobacterium ~44% GC; low end of homoacetogens
+  gc_max: 65.0                   # Moorella ~55%; wide window for genus-level diversity
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/apb_fthfs
+  top_n: 10
+  generate_html: true
+  generate_csv: true

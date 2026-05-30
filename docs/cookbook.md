@@ -1568,3 +1568,185 @@ extraction is not possible.
   *PLoS Comput Biol* 7:e1002189. doi:10.1371/journal.pcbi.1002189
 - Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 16 — Acid-Producing Bacteria (APB) via *fthfs* (oilfield MIC monitoring, 4th channel)
+
+**Goal.** Detect homoacetogens — the dominant acid-producing bacteria in
+oilfield produced water — using a LAMP assay targeting the *fthfs* gene
+(formyltetrahydrofolate synthetase), the committed step of the Wood-Ljungdahl
+carbon-fixation pathway that converts CO2 to acetic acid.
+
+**Why it's interesting.** Acid-producing bacteria are the neglected fourth
+guild in oilfield MIC.  The three canonical MIC guilds monitored by
+BioVind's oil & gas panel — SRB (dsrB, Recipe 6), methanogens (mcrA,
+Recipe 10), and IRB (omcA, Recipe 15) — account for H2S production, CH4
+souring, and iron dissolution, respectively.  APB via *fthfs* adds the
+missing piece: organic acid production.
+
+Homoacetogens create two compounding hazards.
+
+1. **Direct pH attack.** Acetic acid (and traces of formate, propionate)
+   depress produced water pH from ~6.5–7.0 toward 4–5.  At pH < 5 the
+   protective FeCO3 passivation layer on carbon-steel dissolves, exposing
+   bare metal to the corrosive environment.
+2. **SRB amplification loop.** Acetate and H2 — the primary products of
+   homoacetogenesis — are the preferred electron donors for SRB.  An
+   APB-positive sample with a negative SRB call should trigger heightened
+   monitoring because the acetate source, once present, can fuel a rapid
+   SRB bloom in response to any sulfate injection or process upset.
+
+*fthfs* (formyltetrahydrofolate synthetase; EC 6.3.4.3) is the established
+molecular marker for homoacetogens in environmental samples (Leaphart &
+Lovell 2001; Hunger et al. 2011).  Its ATP-grasp and GHMP-kinase catalytic
+domains are highly conserved within homoacetogens yet phylogenetically
+restricted — most non-acetogenic Firmicutes carry *pta*/*ack* genes for
+acetate kinetics but lack the full Wood-Ljungdahl *fthfs*, enabling
+clean genus-level differentiation.  The ~1.7 kb CDS contains at least two
+LAMP-accessible conserved windows.
+
+**Target sequences.** Anchor to Moorella genus (NCBI taxon 44417), the
+thermophilic homoacetogens dominant in high-temperature oilfield reservoirs
+(50–80 °C).  Supplement with Acetobacterium woodii accessions for mesophilic
+surface-facility coverage.
+
+**Config.**  Use the ready-made config at `config/apb_fthfs.yaml`, or paste
+the block below:
+
+```yaml
+target:
+  name: apb_fthfs_oilfield
+  taxon_id: 44417            # Moorella genus -- thermophilic homoacetogens
+  accessions:
+    # Supplement with Acetobacterium woodii DSM 1030 and Sporomusa sphaeroides
+    # CDS records for mesophilic surface-facility coverage.
+    []
+  gene: fthfs
+  max_sequences: 30
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.30        # fthfs: mid-range, like dsrB / mcrA
+
+primer:
+  tm_min: 60.0                   # DNA target -- standard LAMP floor (not RT-LAMP)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0                   # Acetobacterium ~44% GC
+  gc_max: 65.0                   # Moorella ~55% GC; wide window for diversity
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/apb_fthfs
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Off-target panel.**  Key differentials for specificity in an oilfield
+produced-water sample:
+
+| File | Source | Why |
+|---|---|---|
+| `desulfovibrio_vulgaris.fasta` | Hildenborough RefSeq | Dominant SRB — carries THF-pathway genes but not Wood-Ljungdahl *fthfs*; must not co-flag in APB channel |
+| `methanobacterium_formicicum.fasta` | RefSeq | Formate-consuming methanogen; formate/THF chemistry overlaps with homoacetogenesis — key specificity test |
+| `clostridium_acetobutylicum.fasta` | ATCC 824 RefSeq | Fermentative Clostridium with *pta*/*ack* but no *fthfs* — representative of non-acetogens that classical APB culture tests would also count |
+| `shewanella_oneidensis.fasta` | MR-1 RefSeq | IRB; must not co-flag in APB channel |
+| `pseudomonas_aeruginosa.fasta` | PA01 RefSeq | Ubiquitous oilfield biofilm bacterium; no Wood-Ljungdahl pathway |
+| `escherichia_coli.fasta` | K-12 MG1655 RefSeq | Common contamination; no *fthfs* |
+
+**Key config notes.**
+
+- `conservation.entropy_threshold: 0.30` — *fthfs* sits between tight
+  housekeeping genes (rpoB < 0.20) and the loosest polyphyletic markers
+  (dsrB/mcrA > 0.30).  The ATP-grasp and GHMP-kinase active-site residues
+  are near-invariant; synonymous positions diverge at the inter-genus level,
+  so 0.30 bits is empirically appropriate.
+- `gc_min / gc_max: 40–65%` — Moorella is ~55% GC, Acetobacterium ~44%.
+  The wider window (25 GC units) ensures primer candidates are found when
+  accessions from both genera are present in the sequence set.
+- `tm_min: 60.0` — *fthfs* is a chromosomal DNA target; do **not** raise
+  this to the RT-LAMP 63 °C floor used for PRRSV, FMDV, and AIV.
+- `target.accessions` — add fthfs CDS records for *A. woodii* DSM 1030,
+  *Sporomusa sphaeroides* DSM 2875, and *Thermoanaerobacter kivui* DSM 2030
+  to capture both thermophilic and mesophilic oilfield niches.
+
+**Complete the four-channel oilfield MIC panel.**  After designing SRB,
+methanogen, IRB, and APB assays independently, run `lamp-forge panel` to
+screen the combined set for cross-assay primer compatibility:
+
+```bash
+lamp-forge panel \
+  --set SRB=results/srb_dsrB/primer_sets.json \
+  --set MCR=results/methanogen_mcrA/primer_sets.json \
+  --set IRB=results/irb_omcA/primer_sets.json \
+  --set APB=results/apb_fthfs/primer_sets.json \
+  --top-per-target 5 \
+  --out results/mic_4plex_panel
+```
+
+Generate the pooling sheet (four targets = 176 uM minimum; request 200 uM
+resuspension from IDT or Twist):
+
+```bash
+lamp-forge pool \
+  --panel results/mic_4plex_panel/panel.json \
+  --stock-conc 200 \
+  --total-volume 500 \
+  --out results/mic_4plex_panel/pool_sheet.csv
+```
+
+Export APB primers for IDT ordering:
+
+```bash
+lamp-forge export \
+  --input results/apb_fthfs/primer_sets.json \
+  --format idt \
+  --target-label APB_fthfs \
+  --out orders/apb_fthfs_idt_order.csv
+```
+
+**Interpreting the four-channel MIC panel result.**
+
+| SRB | MCR | IRB | APB | Risk interpretation |
+|---|---|---|---|---|
+| + | + | + | + | Maximum MIC + souring risk; all four corrosion guilds active; immediate biocide and nitrate-injection review |
+| + | - | + | + | APB + SRB syntrophic loop active; iron cycling; high structural pitting + acid corrosion risk |
+| - | - | - | + | Acetogenic baseline; SRB not yet established; monitor — a sulfate injection or process upset can trigger rapid SRB bloom |
+| + | + | - | - | Sulfidogenesis + gas souring without iron/acid amplification; standard souring protocol |
+| - | - | - | - | Low microbial activity; re-test after process upset or water injection |
+
+**Field note.**  Homoacetogens are strict anaerobes.  Collect produced-water
+samples into anaerobic Hungate tubes (N2 headspace) or serum vials sealed
+immediately after collection.  Freeze-preserve at −20 °C on a 0.2 µm
+membrane filter within four hours if DNA extraction is not possible on-site.
+Cell concentrations in MIC-active produced water typically exceed 10³
+cells/mL — well above the LOD achievable with standard 200 µL sample
+extraction (use `lamp-forge lod` to confirm with your site-specific extraction
+parameters).
+
+**References.**
+
+- Hunger S, Schmidt O, Hilgarth M et al. (2011). Competing formate- and
+  carbon dioxide-utilizing prokaryotes in an anoxic methane-emitting fen soil.
+  *Environ Microbiol* 13:2228–2238. doi:10.1111/j.1462-2920.2011.02491.x
+- Leaphart AB & Lovell CR (2001). Recovery and analysis of *fthfs* gene
+  sequences as markers for acetogenic bacteria in soil and sediment microbial
+  communities. *Appl Environ Microbiol* 67:2720–2728.
+  doi:10.1128/AEM.67.6.2720-2728.2001
+- Pierce E, Xie G, Barabote RD et al. (2008). The complete genome sequence
+  of *Moorella thermoacetica*. *Environ Microbiol* 10:2550–2573.
+  doi:10.1111/j.1462-2920.2008.01679.x
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
