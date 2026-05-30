@@ -1,0 +1,149 @@
+# LAMP-Forge example configuration.
+# ============================================================================
+# Target: Nitrate-Reducing Bacteria (NRB) -- oilfield souring management
+#         via dissimilatory nitrate reductase alpha subunit (narG)
+#
+# Why this target:
+#   Nitrate injection is the primary biological souring-control strategy in
+#   oilfield reservoir management.  Injected nitrate selectively stimulates
+#   NRB, which outcompete SRB for shared electron donors (H2, acetate,
+#   lactate) and produce nitrite -- a direct competitive inhibitor of sulfate
+#   reductase.  This suppresses H2S generation and slows MIC without the
+#   toxicity and handling hazards of biocide chemicals.
+#
+#   Monitoring NRB alongside SRB (dsrB, Recipe 6) provides a real-time
+#   efficacy readout for nitrate-injection programs:
+#     NRB+/SRB-  -- NRB are dominating; nitrate injection is suppressing SRB
+#     NRB-/SRB+  -- SRB have reasserted; review nitrate dose/frequency
+#     NRB+/SRB+  -- NRB present but not outcompeting; consider dose escalation
+#   Combined with methanogens (mcrA), IRB (omcA), and APB (fthfs), an NRB
+#   channel completes the five-guild oilfield MIC panel.
+#
+# Gene marker -- narG (dissimilatory nitrate reductase alpha subunit):
+#   narG encodes the catalytic molybdopterin-guanine dinucleotide (MGD)
+#   binding subunit of respiratory nitrate reductase (EC 1.7.99.4).  It is
+#   the canonical functional-gene marker for NRB in environmental monitoring:
+#     - Present in all respiratory denitrifiers, absent in fermenters and
+#       most obligate anaerobes lacking respiratory nitrate metabolism.
+#     - Phylogenetically broad but functionally restricted: narG is found in
+#       Paracoccus, Pseudomonas, Thiobacillus, Thauera, and Arcobacter --
+#       the key genera in oilfield NRB communities.
+#     - The ~2.7 kb CDS contains conserved MGD-binding and iron-sulfur-cluster
+#       blocks that provide LAMP-accessible windows despite inter-genus
+#       synonymous divergence.
+#   Published use as an environmental-monitoring marker in oilfields:
+#     Hubert C & Voordouw G (2007) Appl Environ Microbiol 73:2644-2652.
+#     Castillo et al. (2019) Front Microbiol 10:2534.
+#
+# Taxon anchor:
+#   Paracoccus genus (NCBI taxon 265) -- the model respiratory denitrifier
+#   lineage and most-studied narG reference.  Supplement with accessions from
+#   Pseudomonas stutzeri, Thiobacillus denitrificans, and Thauera aromatica
+#   for full oilfield NRB coverage.
+#
+# BioVind use-case:
+#   Fifth channel in the oilfield MIC/souring panel alongside
+#   config/srb_dsrB.yaml, config/methanogen_mcrA.yaml, config/irb_omcA.yaml,
+#   and config/apb_fthfs.yaml.  A rising NRB signal alongside a declining
+#   SRB signal confirms that nitrate injection is working.  Run
+#   lamp-forge panel across all five primer-set JSONs to screen for
+#   cross-assay primer compatibility before ordering.
+#
+# Key parameter notes:
+#   - conservation.entropy_threshold: 0.35 -- narG is a polyphyletic
+#     functional gene like dsrB and mcrA: the MGD-binding Cys/Met residues
+#     are near-invariant, but inter-genus synonymous divergence is high.
+#     0.35 bits exploits the conserved catalytic blocks without being too
+#     strict for a multi-genus input set.
+#   - gc_min/gc_max: 40-70% -- dominant oilfield NRB genera are GC-rich:
+#     Paracoccus ~67%, Pseudomonas stutzeri ~63%, Thiobacillus denitrificans
+#     ~66%.  The wide window (30 GC units) ensures primer candidates are
+#     found across the GC-rich conserved narG blocks.
+#   - tm_min: 60.0 -- narG is a chromosomal DNA target; standard LAMP
+#     floor, NOT the RT-LAMP 63 degC one-step co-activity requirement.
+#   - target.accessions: add narG CDS records for Pseudomonas stutzeri
+#     JM300, Thiobacillus denitrificans ATCC 25259, Thauera aromatica K172,
+#     and Arcobacter nitrofigilis DSM 7299 (napA for the periplasmic lineage)
+#     to capture the full oilfield NRB community.
+#
+# References:
+#   Hubert C & Voordouw G (2007) Oil field souring control by nitrate-reducing
+#   Sulfurospirillum spp. that outcompete sulfate-reducing bacteria for
+#   organic electron donors. Appl Environ Microbiol 73:2644-2652.
+#   doi:10.1128/AEM.02403-06
+#   Castillo JA, Agathos SN & de los Cobos-Vasconcelos D (2019) Functional
+#   gene diversity and microbial community dynamics in oilfield souring and
+#   corrosion. Front Microbiol 10:2534. doi:10.3389/fmicb.2019.02534
+#   Braker G, Fesefeldt A & Witzel KP (1998) Development of PCR primer
+#   systems for amplification of nitrite reductase genes to detect
+#   denitrifying bacteria in environmental samples.
+#   Appl Environ Microbiol 64:3769-3775.
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63.
+# ============================================================================
+
+target:
+  name: nrb_narG_oilfield
+  taxon_id: 265              # Paracoccus genus -- canonical NRB model clade
+  accessions:
+    # Supplement Paracoccus sequences with key oilfield NRB genera.
+    # Recommended additions (NCBI narG CDS accessions):
+    #   Pseudomonas stutzeri JM300       -- versatile oilfield denitrifier
+    #   Thiobacillus denitrificans ATCC 25259 -- sulfur-oxidizing denitrifier;
+    #                                            specifically relevant to sour oilfields
+    #   Thauera aromatica K172           -- aromatic-compound denitrifier
+    #   Arcobacter nitrofigilis DSM 7299 -- Epsilonproteobacteria NRB (napA)
+    # Leave empty [] for a Paracoccus-genus taxon-driven test run.
+    []
+  gene: narG                 # dissimilatory nitrate reductase alpha subunit
+  max_sequences: 30          # span Paracoccus species + supplementary genera
+  email: you@your-inst.edu   # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Critical off-target differentials for an oilfield NRB assay.
+  # The key biological specificity requirement: NRB primers must NOT fire
+  # on SRB (dsrB assay target) -- these are the opposing guilds and the
+  # assay's diagnostic value depends on distinguishing them cleanly.
+  #
+  #   desulfovibrio_vulgaris.fasta       -- dominant SRB in oilfields; no narG;
+  #                                         MUST NOT co-flag in the NRB channel
+  #   methanobacterium_formicicum.fasta  -- methanogen; anaerobic, no narG
+  #   shewanella_oneidensis.fasta        -- IRB; uses Fe(III) not nitrate as
+  #                                         terminal electron acceptor; no narG
+  #   escherichia_coli.fasta             -- carries narG/narZ for anaerobic
+  #                                         respiration but is NOT a denitrifier;
+  #                                         E. coli narG cross-flag indicates
+  #                                         overly broad primer design
+  #   pseudomonas_aeruginosa.fasta       -- PA01 has narGHJI for denitrification;
+  #                                         cross-reactivity is scientifically
+  #                                         acceptable (PA is also an NRB), but
+  #                                         confirm in the specificity report
+  #   crude_oil_microbiome_mixed.fasta   -- produced-water metagenome background
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.35        # narG: polyphyletic functional gene; MGD-binding
+                                 # motifs are invariant, inter-genus synonymous
+                                 # divergence is high (same profile as dsrB/mcrA)
+  min_region_length: 220         # LAMP needs ~200 bp; 220 ensures margin for F3/B3
+
+primer:
+  tm_min: 60.0                   # DNA target -- standard LAMP Tm floor (not RT-LAMP)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0                   # broad floor for inter-genus primer diversity
+  gc_max: 70.0                   # Paracoccus/Pseudomonas/Thiobacillus are GC-rich
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/nrb_narG
+  top_n: 10
+  generate_html: true
+  generate_csv: true

@@ -1750,3 +1750,201 @@ parameters).
   doi:10.1111/j.1462-2920.2008.01679.x
 - Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 17 — Nitrate-Reducing Bacteria (NRB) via *narG* (oilfield souring control, 5th channel)
+
+**Goal.** Detect nitrate-reducing bacteria (NRB) in oilfield produced water
+or pipeline biofilm using a LAMP assay targeting *narG* (dissimilatory nitrate
+reductase alpha subunit) — adding the fifth and final functional-guild channel
+to a comprehensive MIC/souring panel alongside SRB (Recipe 6 / *dsrB*),
+methanogens (Recipe 10 / *mcrA*), IRB (Recipe 15 / *omcA*), and APB
+(Recipe 16 / *fthfs*).
+
+**Why it's interesting.**  Nitrate injection is the primary *biological*
+souring-control strategy in reservoir management.  Injected nitrate
+selectively stimulates NRB, which:
+
+1. **Outcompete SRB** for shared electron donors (H₂, acetate, lactate)
+   through thermodynamic favourability (nitrate reduction is more energetically
+   favourable than sulfate reduction).
+2. **Produce nitrite**, a direct inhibitor of dissimilatory sulfate reductase,
+   suppressing H₂S production at the enzymatic level.
+
+The critical diagnostic question is not simply "are NRB present?" but
+**"is the NRB:SRB ratio sufficient to suppress souring?"**  A rising NRB
+signal alongside a declining *dsrB* signal is the expected outcome of a
+successful nitrate-injection treatment.  A positive NRB signal that fails
+to suppress SRB indicates the treatment dose is insufficient or SRB have
+acquired nitrite resistance.
+
+NRB are phylogenetically diverse (Paracoccus, Pseudomonas, Thiobacillus,
+Thauera, Arcobacter span multiple phyla) and share only functional affinity.
+A gene-level assay targeting *narG* is the correct approach, just as *dsrB*
+captures phylogenetically diverse SRB.
+
+**Target.**  *narG* — the catalytic MGD-binding subunit of respiratory
+nitrate reductase (EC 1.7.99.4), the field-standard functional marker for
+NRB in environmental microbiology (Braker et al. 1998; Castillo et al. 2019).
+Use the ready-made config at `config/nrb_narG.yaml`, or paste the block below:
+
+```yaml
+target:
+  name: nrb_narG_oilfield
+  taxon_id: 265              # Paracoccus genus -- canonical NRB model clade
+  accessions:
+    # Supplement with narG CDS records from key oilfield NRB genera:
+    #   Pseudomonas stutzeri JM300
+    #   Thiobacillus denitrificans ATCC 25259
+    #   Thauera aromatica K172
+    #   Arcobacter nitrofigilis DSM 7299 (napA, periplasmic nitrate reductase)
+    []
+  gene: narG
+  max_sequences: 30
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.35   # polyphyletic functional gene -- same profile as dsrB/mcrA
+
+primer:
+  tm_min: 60.0               # DNA target -- standard LAMP (not RT-LAMP)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0
+  gc_max: 70.0               # GC-rich NRB genera (Paracoccus ~67%, Pseudomonas ~63%)
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/nrb_narG
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config notes.**
+
+- `conservation.entropy_threshold: 0.35` — *narG* is a polyphyletic functional
+  gene with the same conservation profile as *dsrB* and *mcrA*: the
+  MGD-binding Cys/Met residues are near-invariant, but synonymous divergence
+  between genera is high.
+- `gc_min/gc_max: 40-70%` — dominant oilfield NRB genera are GC-rich
+  (Paracoccus ~67%, Pseudomonas stutzeri ~63%, Thiobacillus denitrificans
+  ~66%).  The 30-unit window ensures primer candidates can be found when
+  sequences from multiple genera are present.
+- `tm_min: 60.0` — *narG* is a chromosomal DNA target; do **not** raise to
+  the RT-LAMP 63 °C floor used for RNA-virus recipes.
+- Supplement `target.accessions` before running: *narG* CDS records from
+  *Thiobacillus denitrificans*, *Pseudomonas stutzeri*, *Thauera aromatica*,
+  and *Arcobacter* spp. extend coverage to the full oilfield NRB community.
+
+**Off-target panel.**  The essential specificity requirement is clean
+separation from SRB — the two guilds are biological antagonists and the
+assay's diagnostic value depends on distinguishing them:
+
+| File | Source | Why |
+|---|---|---|
+| `desulfovibrio_vulgaris.fasta` | Hildenborough RefSeq | Dominant oilfield SRB — must **not** co-flag in NRB channel |
+| `methanobacterium_formicicum.fasta` | RefSeq | Methanogen; no *narG* |
+| `shewanella_oneidensis.fasta` | MR-1 RefSeq | IRB; uses Fe(III) not nitrate; must not co-flag |
+| `escherichia_coli.fasta` | K-12 MG1655 RefSeq | Carries *narGHJI* for anaerobic respiration but is not a denitrifier; cross-flag indicates over-broad primers |
+| `pseudomonas_aeruginosa.fasta` | PA01 RefSeq | Has *narG* denitrification genes; cross-reactivity is biologically acceptable (PA01 is also an NRB) |
+| `crude_oil_microbiome_mixed.fasta` | Site metagenome | Produced-water environmental background |
+
+**Expected output.**  *narG* is a ~2.7 kb CDS; expect two or three conserved
+windows.  Top sets should show zero flagged hits against *Desulfovibrio*,
+methanogens, and *Shewanella*.  *Pseudomonas aeruginosa* cross-reactivity is
+expected and biologically acceptable — PA01 IS an NRB.
+
+**Complete the five-channel oilfield MIC panel.**  After designing all five
+assays independently:
+
+```bash
+lamp-forge panel \
+  --set SRB=results/srb_dsrB/primer_sets.json \
+  --set MCR=results/methanogen_mcrA/primer_sets.json \
+  --set IRB=results/irb_omcA/primer_sets.json \
+  --set APB=results/apb_fthfs/primer_sets.json \
+  --set NRB=results/nrb_narG/primer_sets.json \
+  --top-per-target 5 \
+  --out results/mic_5plex_panel
+```
+
+Generate the pooling sheet (five targets = 220 uM minimum; request 250 uM
+resuspension from IDT or Twist):
+
+```bash
+lamp-forge pool \
+  --panel results/mic_5plex_panel/panel.json \
+  --stock-conc 250 \
+  --total-volume 500 \
+  --out results/mic_5plex_panel/pool_sheet.csv
+```
+
+Export NRB primers for IDT ordering:
+
+```bash
+lamp-forge export \
+  --input results/nrb_narG/primer_sets.json \
+  --format idt \
+  --target-label NRB_narG \
+  --out orders/nrb_narG_idt_order.csv
+```
+
+Estimate LOD for a 1 mL produced-water sample (50% DNA extraction, 100 uL
+eluate, 5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 1000 \
+  --efficiency 0.50 \
+  --eluate-volume 100 \
+  --reaction-input 5
+```
+
+Effective sample = 1000 x 0.50 x (5/100) = 25 uL per reaction.  NRB loads
+in nitrate-injected produced water during active treatment typically exceed
+10⁴ cells/mL, providing orders-of-magnitude headroom above the achievable LOD.
+
+**Interpreting the five-channel panel result.**
+
+| SRB | MCR | IRB | APB | NRB | Risk / treatment interpretation |
+|---|---|---|---|---|---|
+| - | - | - | - | + | Nitrate injection working; NRB dominant; low souring risk |
+| + | - | + | + | + | NRB present but not suppressing SRB; all corrosion guilds active; escalate nitrate dose or add biocide |
+| + | + | + | + | - | All four MIC guilds active; no NRB; nitrate not injected or exhausted; maximum risk |
+| + | - | - | - | + | SRB and NRB co-present; treatment under-dosed; SRB not yet suppressed |
+| - | - | - | - | - | Low microbial activity; maintain monitoring schedule |
+
+**Field note.**  NRB are facultative anaerobes that survive aerobic sample
+handling, unlike the strict anaerobes (SRB, methanogens) also measured in
+this panel.  For a complete five-guild panel, use anaerobic Hungate tubes to
+preserve all community members from collection through extraction.
+
+**References.**
+
+- Hubert C & Voordouw G (2007). Oil field souring control by nitrate-reducing
+  *Sulfurospirillum* spp. that outcompete sulfate-reducing bacteria for organic
+  electron donors. *Appl Environ Microbiol* 73:2644–2652.
+  doi:10.1128/AEM.02403-06
+- Castillo JA, Agathos SN & de los Cobos-Vasconcelos D (2019). Functional gene
+  diversity and microbial community dynamics in oilfield souring and corrosion.
+  *Front Microbiol* 10:2534. doi:10.3389/fmicb.2019.02534
+- Braker G, Fesefeldt A & Witzel KP (1998). Development of PCR primer systems
+  for amplification of nitrite reductase genes to detect denitrifying bacteria
+  in environmental samples. *Appl Environ Microbiol* 64:3769–3775.
+- Voordouw G (2011). Production-related petroleum microbiology: progress and
+  prospects. *Curr Opin Biotechnol* 22:401–405.
+  doi:10.1016/j.copbio.2011.01.015
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
