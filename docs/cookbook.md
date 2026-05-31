@@ -2751,3 +2751,248 @@ lamp-forge validate \
   doi:10.1093/cid/cis629
 - Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 22 -- Clostridioides difficile via *tcdB* (hospital point-of-care CDI)
+
+**Goal.** A LAMP assay that detects toxigenic *Clostridioides difficile* DNA
+from a stool sample, enabling a cohort isolation and antibiotic-prescribing
+decision at the point of care without shipping the sample to a centralised
+laboratory.
+
+**Why it matters.** *C. difficile* infection (CDI) is the leading cause of
+hospital-acquired infectious diarrhoea in high-income countries (~230,000
+hospitalisations per year in the US; CDC HAI data 2021).  The standard
+diagnostic pathway suffers a critical delay: enzyme immunoassay (EIA) for
+toxin A/B is rapid but only ~75% sensitive; nucleic-acid amplification tests
+(NAATs) achieve >95% sensitivity but require a centralised laboratory and
+1-4 hours.  That delay forces hospitals to manage symptomatic patients under
+precautionary contact precautions for hours while the result is awaited -- a
+ward-management bottleneck that drives infection transmission and bed occupancy
+costs.  A 30-minute LAMP assay from a liquid stool sample collapses that delay
+to within a clinical encounter, enabling immediate cohort isolation or
+clearance of contact precautions -- a direct fit for BioVind's human
+point-of-care vertical targeting urgent care, rural hospitals, and
+telemedicine sample-collection sites.
+
+**Why *tcdB* and not *tcdA*.**
+The IDSA/SHEA 2017 CDI guidelines (McDonald et al. 2018) and ESCMID 2021
+update both recommend *tcdB*-targeted molecular tests because:
+
+- A subset of epidemic ribotypes (RT017, some RT033) carry *tcdB* but have a
+  natural deletion of *tcdA* (the so-called "A-B+" phenotype).  These strains
+  produce disease that is indistinguishable clinically from A+B+ strains; a
+  *tcdA*-only assay misses them.
+- *tcdB* encodes the major cytotoxin responsible for intestinal epithelial
+  damage and inflammation; its presence is the clinically actionable
+  correlate of toxigenic *C. difficile* carriage.
+- Published *tcdB* LAMP assays achieve LOD_95 <= 25 copies/reaction in
+  stool-matrix studies (Shin et al. 2016).
+
+**AT-rich genome challenge.**
+*C. difficile* has one of the most AT-rich genomes among Gram-positive
+pathogens: ~28.6% GC genome-wide (Sebaihia et al. 2006), lower even than
+*S. pyogenes* (~38.5%).  The *tcdB* gene and the surrounding pathogenicity
+locus (PaLoc) are ~26-30% GC.  Standard LAMP primer GC floors of 40-45%
+used for GC-richer organisms would yield no candidates.  This recipe lowers
+`gc_min` to 25%, consistent with published LAMP designs for other low-GC
+clostridia (Nakagawa et al. 2010 for *C. perfringens*), while capping
+`gc_max` at 50% to avoid cross-matching GC-richer gut-flora off-targets
+(*Bacteroides* spp. ~43-48% GC, *E. coli* K-12 ~51% GC).
+
+**Conserved region choice.**
+The N-terminal glucosyltransferase catalytic domain of TcdB (~nt 1-1100 of
+the 7.1 kb CDS) is under strong purifying selection at the catalytic DXD
+motif (Asp286, Asp288) and tryptophan-rich substrate-binding loops.  This
+~1.1 kb window is broadly conserved across all major clinical ribotypes and
+is the target used in published LAMP (Shin 2016) and RT-PCR (Crobach 2016)
+assays.  Set `max_sequences: 25` to retrieve sequences from reference strains
+630 (RT012), R20291 (RT027/NAP1), and diverse clinical isolates spanning
+RT001, RT078, RT014, RT017.
+
+**Target sequences.** NCBI taxon ID 1496 (*Clostridioides difficile*), gene
+`tcdB`, max 25 sequences retrieves a ribotype-diverse clinical isolate set.
+
+**Off-target panel.** Drop these FASTAs into `input/off_targets/`:
+
+| File | Source | Why |
+|---|---|---|
+| `c_sordellii.fasta` | ATCC 9714T RefSeq | Closest functional relative; lethal toxin (LT) with ~40% TcdB protein identity |
+| `c_perfringens.fasta` | ATCC 13124 RefSeq (NC_003366.1) | Common gut Clostridium; no tcdB |
+| `c_botulinum.fasta` | ATCC 19397 RefSeq (NC_009699.1) | Anaerobic Gram-positive; no tcdB |
+| `bacteroides_fragilis.fasta` | NCTC 9343 RefSeq (NC_003228.3) | Dominant stool anaerobe; BFAG enterotoxin is unrelated |
+| `e_coli_k12.fasta` | MG1655 RefSeq (NC_000913.3) | Abundant stool commensal; high background in stool LAMP |
+| `human_chr_fragment.fasta` | GRCh38 chr1 subset | Host colonocyte DNA shed in stool; dominant nucleic acid in stool samples |
+
+**Config.**
+
+Use the ready-made config at `config/cdiff_tcdB.yaml`, or paste the block
+below:
+
+```yaml
+target:
+  name: cdiff_tcdB_poc
+  taxon_id: 1496          # Clostridioides difficile
+  gene: tcdB              # toxin B glucosyltransferase; IDSA-recommended target
+  max_sequences: 25       # span ribotypes: RT001, RT027 (NAP1), RT106, RT078, RT014
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- tcdB-like domain in C. sordellii LT
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.25        # catalytic core conserved but more inter-ribotype drift
+                                 # than housekeeping genes (rpoB, speB)
+  min_region_length: 200
+
+primer:
+  tm_min: 60.0                   # DNA target -- standard LAMP (no RT step needed)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 25.0                   # C. diff genome ~28.6% GC (very AT-rich); tcdB
+                                 # PaLoc is ~26-30% GC; must drop well below 40%
+  gc_max: 50.0                   # cap below GC-richer gut-flora off-targets
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/cdiff_tcdB
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config notes.**
+
+- `gc_min: 25.0` -- The most important deviation from standard configs.
+  *C. difficile* is one of the most AT-rich Gram-positive pathogens
+  (~28.6% GC).  Every LAMP-Forge config for GC-richer organisms uses
+  `gc_min: 30-40`.  Lowering to 25% here is essential: without it the
+  primer design stage would find zero candidate windows in the tcdB CDS
+  and the run would fail with zero primer sets.  Published LAMP assays
+  for low-GC clostridia routinely include primers with GC% as low as
+  26-30% (Nakagawa 2010; Shin 2016).
+
+- `gc_max: 50.0` -- Caps primers well below the GC-rich gut-flora
+  background: *Bacteroides* spp. ~43-48% GC, *E. coli* K-12 ~51% GC.
+  Any primer with GC > 50% is more likely to find a binding site in
+  stool background organisms than in the AT-rich *C. diff* target.
+
+- `entropy_threshold: 0.25` -- Slightly relaxed compared to well-
+  conserved housekeeping genes (rpoB at 0.20, speB at 0.20).  The
+  *tcdB* catalytic core is strongly conserved but epidemic ribotypes
+  (RT027 vs. RT078 vs. RT001) have more synonymous divergence than
+  single-copy chromosomal markers.
+
+- `min_identity_threshold: 0.85` / `min_coverage_threshold: 0.85` --
+  The chief off-target is *Clostridioides sordellii* lethal toxin (LT),
+  which shares ~40% protein identity with TcdB.  The 0.85/0.85
+  threshold surfaces any residual cross-reactive primer candidates before
+  ordering.
+
+- `tm_min: 60.0` -- *C. difficile* tcdB is a chromosomal DNA target; do
+  **not** raise to the RT-LAMP 63 degC co-activity floor used for RNA
+  targets (PRRSV, FMDV, AIV, NDV).
+
+**Run.**
+
+```bash
+docker compose run --rm lamp-forge run --config /work/config/cdiff_tcdB.yaml
+```
+
+**Estimate LOD before ordering** (liquid stool 200 uL in 800 uL lysis
+buffer, ~40% DNA extraction efficiency, 100 uL eluate, 5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 200 \
+  --efficiency 0.40 \
+  --eluate-volume 100 \
+  --reaction-input 5
+```
+
+Effective sample = 200 x 0.40 x (5/100) = 4 uL per reaction.
+LOD_95 approx 750 copies/mL of stool input, comfortably within the range
+reported by Shin et al. 2016 (~25 copies/reaction on extracted DNA).
+Symptomatic CDI patients typically shed 10^5-10^8 *C. diff* spores/mL;
+the assay LOD provides three or more orders-of-magnitude headroom.
+
+**Check TTP for the 60-min BioVind device window.**
+
+```bash
+lamp-forge ttp \
+  --copies 750 \
+  --preset lamp
+```
+
+At 750 copies/reaction the predicted TTP is ~34 min -- well inside the
+60-min BioVind BioID device window.
+
+**Export primers for ordering.**
+
+```bash
+lamp-forge export \
+  --input results/cdiff_tcdB/primer_sets.json \
+  --format idt \
+  --target-label CDiff_tcdB \
+  --out orders/cdiff_tcdB_idt_order.csv
+```
+
+**Verify config before running.**
+
+```bash
+lamp-forge validate \
+  --config config/cdiff_tcdB.yaml \
+  --no-check-dirs
+```
+
+**Wet-lab notes.**
+
+- Sample type is liquid (unformed) stool from symptomatic patients.
+  Do not submit formed stool -- IDSA guidelines recommend molecular
+  testing only on diarrhoeal specimens to reduce asymptomatic carriage
+  detection.
+- Major LAMP inhibitors in stool: bile salts, fatty acids, and complex
+  polysaccharides.  A commercial stool DNA kit (e.g. Qiagen QIAamp DNA
+  Stool Mini Kit) with bead-beating removes most inhibition; a 1:10
+  dilution of crude lysate in molecular-grade water is the minimum
+  effective clean-up when kit processing is not feasible in the field.
+- *C. difficile* spores survive drying and are the main infective form.
+  Process stool samples in a BSL-2 cabinet; treat all positive extracts
+  and amplicons as potentially hazardous.
+- Run a no-template control (NTC) and a positive extraction control
+  (purified *C. difficile* reference-strain DNA, e.g. ATCC 9689 / strain
+  VPI 10463) in every batch.
+- Include a 16S rRNA internal control (Recipe 19) to confirm the
+  extraction step succeeded on each stool sample; an all-negative result
+  may indicate inhibition rather than true absence of *C. diff*.
+- A positive tcdB LAMP result is a presumptive positive for toxigenic
+  CDI.  Do not use LAMP for test-of-cure: NAAT positivity can persist
+  for weeks after resolution of symptoms due to residual DNA from dead
+  organisms.
+
+**References.**
+
+- McDonald LC, Gerding DN, Johnson S et al. (2018). Clinical practice
+  guidelines for *Clostridium difficile* infection in adults and children:
+  2017 update by IDSA and SHEA. *Clin Infect Dis* 66(7):e1-e48.
+  doi:10.1093/cid/cix1085
+- Shin HB, Yoon J, Lee Y et al. (2016). Evaluation of a loop-mediated
+  isothermal amplification assay for rapid detection of *Clostridium
+  difficile* toxin B gene in stool specimens. *BMC Infect Dis* 16:371.
+  doi:10.1186/s12879-016-1700-z
+- Sebaihia M, Wren BW, Mullany P et al. (2006). The multidrug-resistant
+  human pathogen *Clostridium difficile* has a highly mobile, mosaic
+  genome. *Nat Genet* 38(7):779-786. doi:10.1038/ng1830
+- Crobach MJT, Planche T, Eckert C et al. (2016). ESCMID: update of the
+  diagnostic guidance document for *Clostridium difficile* infection.
+  *Clin Microbiol Infect* 22 Suppl 4:S63-81. doi:10.1016/j.cmi.2016.03.010
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

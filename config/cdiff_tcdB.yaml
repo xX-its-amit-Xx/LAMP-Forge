@@ -1,0 +1,98 @@
+# LAMP-Forge config: Clostridioides difficile (C. diff) hospital point-of-care
+# ============================================================================
+# Target: Clostridioides difficile detection via tcdB (toxin B
+# glucosyltransferase) -- the IDSA/SHEA recommended molecular marker for
+# C. diff infection (CDI) diagnosis.
+#
+# Why this target: C. difficile is the leading cause of hospital-acquired
+# infectious diarrhoea worldwide (>230,000 hospitalisations per year in the
+# US alone; CDC, 2021 HAI data).  Standard-of-care diagnosis currently uses
+# enzyme immunoassay (EIA) for toxin A/B -- rapid and cheap but only ~75%
+# sensitive -- or nucleic-acid amplification tests (NAATs) that achieve
+# >95% sensitivity but require a centralised laboratory and 1-4 hours.
+# A 30-minute LAMP assay from a stool sample closes this gap and enables
+# same-visit antibiotic-prescribing decisions in urgent-care, rural clinics,
+# and hospitalised patients awaiting cohort isolation.
+#
+# Why tcdB and not tcdA: The IDSA/SHEA 2021 clinical guidelines (McDonald
+# et al. 2018) recommend molecular testing based on tcdB because:
+# (a) Rare but clinically important ribotypes (RT017, some RT033) carry
+#     tcdB but have a natural tcdA deletion (A-B+ strains); a tcdA-only
+#     assay misses these toxin-producing strains.
+# (b) tcdB encodes the major cytotoxin responsible for the intestinal
+#     epithelial damage driving CDI pathology; its presence is the
+#     diagnostic correlate of toxigenic carriage.
+# (c) Published LAMP assays have demonstrated tcdB-based detection at
+#     LOD_95 <= 25 copies/reaction in stool-matrix studies (Shin et al.
+#     2016; Mori et al. 2020).
+#
+# AT-rich genome challenge: C. difficile has one of the most AT-rich
+# genomes among Gram-positive pathogen (~28.6% GC genome-wide; Sebaihia
+# et al. 2006).  The tcdB gene and its upstream PaLoc are ~26-30% GC.
+# Standard LAMP primer GC floors (40-45%) used for GC-richer targets
+# (mycobacteria, Gram-negatives) would yield no candidates.  This config
+# lowers gc_min to 25% -- consistent with published LAMP designs for
+# other low-GC clostridia (Clostridium perfringens, C. botulinum) --
+# while capping gc_max at 50% to avoid cross-matching the GC-richer gut
+# flora off-targets (Bacteroides spp., E. coli).
+#
+# Conserved region choice: the N-terminal glucosyltransferase catalytic
+# domain of tcdB (~nt 1-1100) is under strong purifying selection for the
+# catalytic DXD motif (Asp286, Asp288) and Trp-rich substrate-binding
+# loops.  This 1.1 kb window is broadly conserved across all major
+# clinical ribotypes (RT001, RT027/NAP1, RT106, RT078, RT014, RT017)
+# and is the primary target for published LAMP and RT-PCR assays.
+#
+# BioVind fit: portable, 30-minute stool CDI testing replaces the
+# overnight laboratory NAAT for same-day cohort isolation decisions --
+# a direct fit for BioVind's human point-of-care (POC) vertical and
+# hospital/urgent-care commercial channel.
+# ============================================================================
+
+target:
+  name: cdiff_tcdB_poc
+  taxon_id: 1496              # Clostridioides difficile (formerly Clostridium difficile)
+  gene: tcdB                  # toxin B large clostridial glucosyltransferase; IDSA target
+  max_sequences: 25           # span key ribotypes: RT001, RT027 (NAP1), RT106, RT078, RT014
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # C. diff specificity panel (drop these FASTAs into input/off_targets/):
+  #   c_sordellii.fasta          - Clostridioides sordellii; carries a homologous lethal
+  #                                toxin (LT) with ~40% tcdB identity -- chief off-target
+  #   c_perfringens.fasta        - Clostridium perfringens; common gut anaerobe; no tcdB
+  #   c_botulinum.fasta          - Clostridium botulinum; gram-positive anaerobe; no tcdB
+  #   bacteroides_fragilis.fasta - dominant stool anaerobe; BFAG enterotoxin is unrelated
+  #   e_coli_k12.fasta           - abundant stool commensal; high background in stool LAMP
+  #   human_chr_fragment.fasta   - host colonocyte DNA shed in stool; GRCh38 chr1 subset
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- tcdB is a large unique gene but some
+  min_coverage_threshold: 0.85   # tcdB-like domains exist in Clostridioides sordellii LT
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.25        # tcdB catalytic core is highly conserved within C. diff
+                                 # but inter-ribotype synonymous drift warrants 0.25 vs
+                                 # the 0.20 used for housekeeping genes (rpoB, speB)
+  min_region_length: 200
+
+primer:
+  tm_min: 60.0                   # chromosomal DNA target -- standard LAMP, no RT step
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 25.0                   # C. difficile genome is ~28.6% GC (highly AT-rich);
+                                 # tcdB/PaLoc region is ~26-30% GC; floor must be set
+                                 # well below the standard 40% used for GC-richer targets
+  gc_max: 50.0                   # cap below GC-richer gut-flora off-targets (Bacteroides
+                                 # spp. ~45-48% GC, E. coli ~51% GC)
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/cdiff_tcdB
+  top_n: 10
+  generate_html: true
+  generate_csv: true
