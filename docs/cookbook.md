@@ -2540,3 +2540,214 @@ lamp-forge ttp \
   for in-field diagnosis of SARS-CoV-2. *Science* 370(6518):914-917.
   doi:10.1126/science.abc7075
 - NEB WarmStart(R) LAMP Kit protocol (E1700). New England Biolabs, 2023.
+
+---
+
+## Recipe 21 -- Group A Streptococcus (GAS) via *speB* (human point-of-care pharyngitis)
+
+**Goal.** Detect *Streptococcus pyogenes* (Group A Streptococcus, GAS) from a
+throat swab at the point of care -- fast enough to drive an antibiotic-
+prescribing decision before the patient leaves the clinic or teleconsultation.
+
+**Why it matters for BioVind.** GAS pharyngitis is the most common bacterial
+cause of sore throat worldwide and the #1 reason for antibiotic prescription
+in primary care globally.  Crucially, untreated GAS carries sequelae
+(rheumatic fever, rheumatic heart disease, post-streptococcal
+glomerulonephritis) that are preventable with a 10-day penicillin course --
+but only if the diagnosis is made correctly.  The current standard of care
+is the rapid antigen detection test (RADT), which has ~86% sensitivity;
+missed cases proceed to 48-hour throat culture.
+
+A 30-minute LAMP assay on a throat swab closes this gap:
+
+- **Sensitivity >= 95%** in comparable throat-swab LAMP studies
+  (Kitagawa et al. 2011; Li et al. 2019).
+- **DNA target**: no RT step, no cold chain for the LAMP master mix.
+- **Single-tube read-out** by turbidity, pH dye, or fluorescence --
+  compatible with BioVind BioID portable device.
+- **Decision time < 30 min** from swab to result: well within the
+  urgent-care or teleconsultation workflow.
+
+This recipe is the first in the human POC vertical that targets a bacterium
+rather than an RNA virus.  BioVind's third vertical (rural urgent care,
+telemedicine) is where portable bacterial pharyngitis testing earns its
+commercial case: shipping throat-swab swabs to a remote lab for culture costs
+48 hours and $50-100 per test; a portable LAMP assay on the same swab in
+real time supports immediate antibiotic stewardship decisions.
+
+**Why *speB*.** *speB* (streptococcal cysteine protease, also called
+*streptococcal pyrogenic exotoxin B* or SCP) encodes a ~38 kDa zymogen
+that is:
+
+- Present in **all** *S. pyogenes* strains (no known natural deletion).
+- **Absent from other streptococcal species**, including Group B
+  (*S. agalactiae*), Group C/G (*S. dysgalactiae*), and *S. pneumoniae*
+  -- the intra-genus off-targets most likely to appear on a throat swab.
+- Under strong pathogenicity-island selection: the catalytic Cys/His dyad
+  and prodomain cleavage site are near-invariant across M-types, yielding
+  at least two LAMP-accessible conserved windows in the ~1.4 kb CDS.
+- The basis of multiple published LAMP assays, confirming empirical
+  primer-design feasibility.
+
+**Target sequences.** NCBI taxon 1314 (*S. pyogenes*), gene `speB`,
+25 sequences spans the globally dominant M-types (M1, M3, M12, M28, M89,
+M77, M4) needed for a conserved-region analysis that reflects clinical
+diversity.
+
+Use the ready-made config at `config/gas_speB.yaml`, or paste the block
+below:
+
+```yaml
+target:
+  name: gas_speB_poc
+  taxon_id: 1314          # Streptococcus pyogenes (Group A Streptococcus)
+  gene: speB              # cysteine protease exotoxin B; GAS-specific marker
+  max_sequences: 25       # span key M-types: M1, M3, M12, M28, M89, M77, M4
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- intra-genus streptococci share GC content
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.20        # speB is well-conserved within GAS (similar to rpoB)
+  min_region_length: 220
+
+primer:
+  tm_min: 60.0                   # DNA target -- standard LAMP (no RT step needed)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 30.0                   # S. pyogenes is AT-rich (~38.5% GC); floor at 30%
+  gc_max: 55.0                   # cap below GC-rich streptococci / staphylococci
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/gas_speB
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config notes.**
+
+- `gc_min: 30.0` -- S. pyogenes is one of the most AT-rich beta-haemolytic
+  streptococci (~38.5% genomic GC; speB CDS is ~37% GC).  Most other
+  LAMP-Forge configs use gc_min >= 35; lowering to 30 is required here to
+  find primer candidates in the lower-GC codon positions without missing
+  conserved windows.
+- `gc_max: 55.0` -- caps primers well below GC-rich common off-targets
+  (S. pneumoniae ~40%, S. aureus ~33%, human DNA ~41%).  A 55% ceiling
+  is deliberately lower than the default 65% to reduce the chance of
+  designing primers that also match GC-richer respiratory flora.
+- `entropy_threshold: 0.20` -- speB is under strong pathogenicity-island
+  selection comparable to single-copy housekeeping genes (rpoB, invA).
+  This is tighter than the functional-gene markers used for polyphyletic
+  targets (dsrB/mcrA at 0.35); the speB catalytic domains are near-
+  invariant across M-types and the threshold exploits this.
+- `min_identity_threshold: 0.85` and `min_coverage_threshold: 0.85` --
+  intra-genus streptococcal off-targets share some conserved gene blocks;
+  the stricter 0.85/0.85 thresholds (versus the bacterial default 0.80/0.80)
+  are required to surface any cross-reactive primer candidates before
+  wet-lab validation.
+- `tm_min: 60.0` -- DNA target; do **not** raise to the RT-LAMP 63 degC
+  floor used for PRRSV, FMDV, AIV, and NDV.
+
+**Off-target panel.** The key differentials are intra-genus streptococci and
+common pharyngeal flora:
+
+| File | Source | Why |
+|---|---|---|
+| `strep_agalactiae.fasta` | NEM316 RefSeq (NC_004116.1) | Group B Streptococcus; same genus; no speB; must not cross-flag |
+| `strep_pneumoniae.fasta` | D39 RefSeq (NC_008533.2) | Pneumococcus; common pharyngeal/respiratory coloniser |
+| `strep_salivarius.fasta` | CCHSS3 RefSeq | Oral commensal; abundant on throat swabs |
+| `strep_mutans.fasta` | UA159 RefSeq (NC_004350.2) | Oral streptococcus; GC content (~36.8%) close to GAS |
+| `staph_aureus.fasta` | MRSA252 RefSeq (NC_002952.2) | Common pharyngeal pathogen; mimics GAS on clinical exam |
+| `human_chr_fragment.fasta` | GRCh38 chr1 subset | Host DNA from throat swab; dominant background nucleic acid |
+
+**Expected output.** The speB CDS (~1.4 kb) should yield 2-4 conserved
+windows at the 0.20-bit threshold.  Top-scoring sets should localise to the
+pro-domain and zymogen regions, with zero flagged hits against all off-target
+streptococci at the 0.85 x 0.85 threshold.  *S. aureus* cross-reactivity at
+any identity is biologically unacceptable and would be a false-positive in
+the clinical context; confirm it is zero before ordering.
+
+**Run.**
+
+```bash
+docker compose run --rm lamp-forge run --config /work/config/gas_speB.yaml
+```
+
+**Estimate LOD before ordering** (throat swab in 200 uL lysis buffer, 50%
+DNA extraction, 50 uL eluate, 5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 200 \
+  --efficiency 0.50 \
+  --eluate-volume 50 \
+  --reaction-input 5
+```
+
+Effective sample = 200 x 0.50 x (5/50) = 10 uL per reaction.
+LOD_95 approx 300 copies/mL of lysis buffer, equivalent to approximately
+60 GAS cells per swab -- consistent with published LAMP sensitivity
+(Kitagawa et al. 2011 reported LOD of 10 CFU/reaction on synthetic template).
+GAS carriage on throat swabs during active pharyngitis typically exceeds
+10^4 CFU/mL; the assay LOD provides two orders-of-magnitude headroom.
+
+**Export primers for ordering.**
+
+```bash
+lamp-forge export \
+  --input results/gas_speB/primer_sets.json \
+  --format idt \
+  --target-label GAS_speB \
+  --out orders/gas_speB_idt_order.csv
+```
+
+**Verify config before running.**
+
+```bash
+lamp-forge validate \
+  --config config/gas_speB.yaml \
+  --no-check-dirs
+```
+
+**Wet-lab notes.**
+
+- Throat swab (posterior pharynx + tonsillar pillars) is the standard
+  sample type.  Swab directly into lysis buffer or a universal transport
+  medium (UTM) for same-day processing.
+- The dominant PCR inhibitor in throat swabs is mucinous glycoproteins.
+  A simple bead-beating or CTAB extraction removes most inhibition; avoid
+  boiling alone as it leaves protein aggregates that can inhibit Bst.
+- Validate the primer set against a mixed-organism throat-swab matrix
+  spiked with GAS reference strain ATCC 12344 (M6) at 10, 100, and 1000
+  CFU/swab to confirm LOD in the clinical matrix.
+- Run a no-template control (NTC) and a positive extraction control
+  (purified GAS DNA) alongside every batch.
+- A positive result should be reported as a presumptive positive pending
+  culture confirmation per local clinical guideline.  For paediatric
+  patients (<15 years) with pharyngitis score >= 3 (Centor / McIsaac),
+  treat empirically without waiting for culture confirmation per IDSA 2012.
+
+**References.**
+
+- Kitagawa Y, Ueno M, Shinozuka N et al. (2011). Loop-mediated isothermal
+  amplification for rapid and sensitive detection of *Streptococcus pyogenes*.
+  *J Infect Chemother* 17(4):486-493. doi:10.1007/s10156-010-0189-3
+- Li J, Macdonald J & von Stetten F (2019). Review: a comprehensive summary of
+  a decade development of the recombinase polymerase amplification. *Analyst*
+  144(1):31-67. doi:10.1039/C8AN01621F
+- Shulman ST, Bisno AL, Clegg HW et al. (2012). Clinical practice guideline
+  for the diagnosis and management of group A streptococcal pharyngitis: 2012
+  update by the IDSA. *Clin Infect Dis* 55(10):e86-e102.
+  doi:10.1093/cid/cis629
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

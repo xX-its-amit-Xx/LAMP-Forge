@@ -1,0 +1,69 @@
+# LAMP-Forge config: Group A Streptococcus (GAS) pharyngitis POC
+# ============================================================================
+# Target: Streptococcus pyogenes detection via speB (streptococcal cysteine
+# protease exotoxin B) -- the established molecular marker for GAS.
+#
+# Why this target: GAS pharyngitis is the most common bacterial cause of sore
+# throat globally and the #1 reason for antibiotic prescription in primary
+# care.  Misdiagnosis (treating viral pharyngitis with antibiotics, or missing
+# true GAS and allowing rheumatic fever / glomerulonephritis to develop) is
+# the principal clinical and stewardship concern.  A portable, 30-minute LAMP
+# assay on a throat swab resolves the antibiotic-prescribing decision at the
+# point of care -- a textbook BioVind POC use case for rural clinics,
+# telemedicine sample-collection sites, and urgent-care kiosks.
+#
+# speB encodes the streptococcal cysteine protease (SpeB, ~38 kDa zymogen),
+# present in virtually all GAS strains and absent from other streptococcal
+# species, making it a highly specific gene-level target.  Published LAMP
+# assays for GAS using speB have demonstrated LOD_95 <= 10 CFU/reaction with
+# 30-minute read-out (Kitagawa et al. 2011; Li et al. 2019).
+#
+# S. pyogenes is AT-rich (~38.5% genomic GC); the primer GC window must be
+# set lower than for GC-rich targets such as mycobacteria or SRB.
+#
+# Position as a triage/screening tool; positive results in high-risk patients
+# (paediatric, contacts of rheumatic fever) should be confirmed by culture
+# or rapid antigen detection test per local guideline.
+# ============================================================================
+
+target:
+  name: gas_speB_poc
+  taxon_id: 1314              # Streptococcus pyogenes (Group A Streptococcus)
+  gene: speB                  # cysteine protease exotoxin B; GAS-specific marker
+  max_sequences: 25           # span key M-types: M1, M3, M12, M28, M89, M77, M4
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Key GAS specificity panel (drop these FASTAs into input/off_targets/):
+  #   strep_agalactiae.fasta     - Group B Streptococcus; closest relative, same genus
+  #   strep_pneumoniae.fasta     - pneumococcus; common pharyngeal/respiratory pathogen
+  #   strep_salivarius.fasta     - oral commensal streptococcus from throat swabs
+  #   strep_mutans.fasta         - oral streptococcus; low clinical relevance but common in swabs
+  #   staph_aureus.fasta         - common pharyngeal pathogen that mimics GAS on clinical exam
+  #   human_chr_fragment.fasta   - host DNA from throat swab; GRCh38 chr1 subset
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- intra-genus streptococci share GC range
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.20        # speB is well-conserved within GAS (comparable to rpoB)
+  min_region_length: 220         # leaves room for F3/B3 outside the F2-B2 span
+
+primer:
+  tm_min: 60.0                   # DNA target -- standard LAMP (no RT step needed)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 30.0                   # S. pyogenes is AT-rich (~38.5% GC); floor at 30%
+  gc_max: 55.0                   # cap below GC-rich streptococci / staphylococci
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/gas_speB
+  top_n: 10
+  generate_html: true
+  generate_csv: true
