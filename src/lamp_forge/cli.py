@@ -1323,6 +1323,157 @@ def panel_export(
     click.echo(f"Format: {vendor_fmt.value.upper()} bulk order")
 
 
+@cli.command(name="mic-risk")
+@click.option("--srb", "srb", is_flag=True, default=False, help="SRB (dsrB) positive.")
+@click.option("--mcr", "mcr", is_flag=True, default=False, help="Methanogens (mcrA) positive.")
+@click.option("--irb", "irb", is_flag=True, default=False, help="IRB (omcA) positive.")
+@click.option(
+    "--apb", "apb", is_flag=True, default=False, help="APB/homoacetogens (fthfs) positive."
+)
+@click.option("--nrb", "nrb", is_flag=True, default=False, help="NRB (narG) positive.")
+@click.option(
+    "--input-json",
+    "input_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Read guild flags from a JSON file instead of individual flags. "
+        "Expected keys: srb, mcr, irb, apb, nrb (bool). "
+        "Missing keys default to false."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary to a file.",
+)
+def mic_risk(
+    srb: bool,
+    mcr: bool,
+    irb: bool,
+    apb: bool,
+    nrb: bool,
+    input_json: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Interpret a five-guild oilfield LAMP panel as a MIC risk assessment.
+
+    Takes the positivity flags for the five functional guilds monitored by a
+    BioVind-style oilfield corrosion panel (SRB, methanogens, IRB, APB, NRB)
+    and returns a structured risk assessment with risk level, numeric score,
+    interpretation, and recommended action.
+
+    Guild markers:
+    \b
+        --srb   Sulfate-reducing bacteria       dsrB   (Recipe 6)
+        --mcr   Methanogens                     mcrA   (Recipe 10)
+        --irb   Iron-reducing bacteria          omcA   (Recipe 15)
+        --apb   Acid-producing bacteria         fthfs  (Recipe 16)
+        --nrb   Nitrate-reducing bacteria       narG   (Recipe 17)
+
+    \b
+    Example -- SRB + IRB co-detected (FeS scale risk):
+        lamp-forge mic-risk --srb --irb
+
+    \b
+    Example -- full five-guild panel from a JSON file:
+        lamp-forge mic-risk --input-json results/guild_flags.json \
+          --out-json results/mic_assessment.json
+
+    \b
+    Example -- all four corrosion guilds active:
+        lamp-forge mic-risk --srb --mcr --irb --apb
+    """
+    import json as json_mod
+
+    from lamp_forge.mic_risk import (
+        GuildFlags,
+        MICRiskLevel,
+        assess_mic_risk,
+        flags_from_dict,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    if input_json is not None:
+        with input_json.open(encoding="utf-8") as fh:
+            raw: dict[str, object] = json_mod.load(fh)
+        flags = flags_from_dict(raw)
+    else:
+        flags = GuildFlags(srb=srb, mcr=mcr, irb=irb, apb=apb, nrb=nrb)
+
+    assessment = assess_mic_risk(flags)
+
+    # --- Guild table ----------------------------------------------------------
+    click.echo("Oilfield MIC guild panel results:")
+    guild_rows = [
+        ("SRB", "dsrB", assessment.flags.srb),
+        ("MCR", "mcrA", assessment.flags.mcr),
+        ("IRB", "omcA", assessment.flags.irb),
+        ("APB", "fthfs", assessment.flags.apb),
+        ("NRB", "narG", assessment.flags.nrb),
+    ]
+    for label, gene, positive in guild_rows:
+        symbol = "+" if positive else "-"
+        click.echo(f"  {label:<5} ({gene:<5})  [{symbol}]")
+
+    click.echo("")
+
+    # --- Risk level (colour-coded) -------------------------------------------
+    level_color = {
+        MICRiskLevel.CRITICAL: "red",
+        MICRiskLevel.HIGH: "red",
+        MICRiskLevel.MODERATE: "yellow",
+        MICRiskLevel.LOW: "green",
+        MICRiskLevel.MINIMAL: "green",
+    }
+    color = level_color[assessment.risk_level]
+    click.secho(
+        f"Risk level : {assessment.risk_level.value}  (score {assessment.risk_score}/100)",
+        fg=color,
+        bold=(assessment.risk_level in (MICRiskLevel.CRITICAL, MICRiskLevel.HIGH)),
+    )
+
+    if assessment.nrb_suppression_active:
+        click.secho("  Note: NRB+ / SRB- -- nitrate injection appears effective.", fg="green")
+    if assessment.treatment_underdosed:
+        click.secho(
+            "  Warning: NRB and SRB both detected -- treatment may be under-dosed.",
+            fg="yellow",
+        )
+
+    click.echo("")
+    click.echo("Interpretation:")
+    click.echo(f"  {assessment.interpretation}")
+    click.echo("")
+    click.echo("Recommended action:")
+    click.echo(f"  {assessment.recommended_action}")
+
+    if assessment.corrosion_drivers:
+        click.echo("")
+        click.echo("Active corrosion pathways:")
+        for driver in assessment.corrosion_drivers:
+            click.echo(f"  - {driver}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
 @cli.command(name="version")
 def version() -> None:
     """Print version and exit."""
