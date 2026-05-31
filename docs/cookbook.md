@@ -3601,3 +3601,187 @@ done
   *ISME J* 11:2180-2194. doi:10.1038/ismej.2017.40
 - Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 26 -- Surveillance sampling plan (`lamp-forge sampling-plan`)
+
+**Goal.** Before a field campaign, determine *how many* wells, animals, or
+patients to test per site visit so that you would detect the target pathogen
+at a stated minimum prevalence with a stated confidence level.
+
+**Why it matters for BioVind.** A portable BioID device makes per-test
+cost low enough that systematic surveillance is practical -- but a poorly
+designed sampling plan either wastes reactions (too many samples) or
+misses outbreaks (too few).  `lamp-forge sampling-plan` closes this gap
+by computing the minimum sample size *n* before a campaign starts, using
+the same probabilistic model that regulatory agencies use for freedom-from-
+disease surveys.
+
+### Model
+
+For an effectively infinite population the standard formula is:
+
+```
+n = ceil[ log(1 - confidence) / log(1 - prevalence * sensitivity) ]
+```
+
+where *prevalence* is the minimum fraction of positive units the campaign
+must detect, *sensitivity* is the LAMP assay's analytical sensitivity
+(probability of a positive result given target present), and *confidence*
+is the required probability of finding at least one positive sample if the
+true prevalence equals the design prevalence.
+
+When the total population size is known (a specific herd, a pipeline with a
+fixed number of monitored wells), supplying `--population-size` applies the
+hypergeometric finite-population correction, which can substantially reduce
+the required *n* for small populations.
+
+### BioVind vertical examples
+
+**Oil & gas -- SRB souring surveillance (oilfield wells).**
+How many wells must be tested per monthly monitoring visit to detect SRB
+presence if >= 5% of wells are positive?
+
+```bash
+lamp-forge sampling-plan \
+  --prevalence 0.01 \
+  --prevalence 0.02 \
+  --prevalence 0.05 \
+  --prevalence 0.10 \
+  --prevalence 0.20 \
+  --confidence 0.95 \
+  --sensitivity 0.95 \
+  --out-csv results/srb_sampling_plan.csv
+```
+
+Expected output (abridged):
+
+```
+Surveillance sampling plan: confidence=95%, sensitivity=95%, population=infinite
+
+    Prevalence (%)   n_samples   Achieved conf (%)
+---------------------------------------------------
+              1.00         313               95.03
+              2.00         157               95.01
+              5.00          63               95.10
+             10.00          31               95.09
+             20.00          16               95.23
+```
+
+At the common produced-water management threshold of 5% positive wells,
+63 samples per monitoring interval are sufficient at 95% confidence.
+If your field has only 20 monitored wells in total, add `--population-size 20`
+to apply the finite-population correction (which will reduce *n* to fewer
+than the 20 total).
+
+**Farm biosecurity -- ASFV detection in a swine herd.**
+How many pigs to test to detect ASFV if >= 5% of a 200-pig herd are infected?
+
+```bash
+lamp-forge sampling-plan \
+  --prevalence 0.05 \
+  --prevalence 0.10 \
+  --confidence 0.95 \
+  --sensitivity 0.95 \
+  --population-size 200 \
+  --out-csv results/asfv_farm_sampling.csv
+```
+
+Expected output:
+
+```
+Surveillance sampling plan: confidence=95%, sensitivity=95%, population=200 units
+
+    Prevalence (%)   n_samples   Achieved conf (%)  FPC
+------------------------------------------------------
+              5.00          53               95.17   yes
+             10.00          25               95.01   yes
+```
+
+The "FPC yes" flag indicates the finite-population correction reduced the
+sample size below the infinite-population estimate (59 -> 53 at 5%).  In
+practice, testing 53 animals from a 200-pig herd per outbreak investigation
+is operationally feasible with a portable device.
+
+**Human POC -- MTB clinic surveillance.**
+How many patients per week must be screened to detect a TB prevalence of
+>= 1% among symptomatic respiratory patients visiting a rural clinic?
+
+```bash
+lamp-forge sampling-plan \
+  --prevalence 0.01 \
+  --prevalence 0.02 \
+  --prevalence 0.05 \
+  --confidence 0.95 \
+  --sensitivity 0.95
+```
+
+At 1% prevalence, 314 patient screens per monitoring period are needed --
+roughly 45 per day over a week.  At a clinically relevant threshold of 5%,
+only 63 screens are required (< 10 per day).
+
+### Combining with LOD
+
+Sampling plan and LOD analysis address complementary questions:
+
+1. **LOD** (`lamp-forge lod`): Given a single positive sample, what is the
+   minimum concentration of target DNA/RNA the assay can reliably detect?
+2. **Sampling plan** (`lamp-forge sampling-plan`): Given that at-risk units
+   in the population will be above the assay LOD when positive, how many
+   units must be tested to find the condition if it is present at prevalence p?
+
+Use both before ordering primers and planning a field campaign:
+
+```bash
+# Step 1: confirm the assay is sensitive enough (LOD)
+lamp-forge lod \
+  --sample-volume 1000 \
+  --efficiency 0.50 \
+  --eluate-volume 100 \
+  --reaction-input 5
+
+# Step 2: plan how many samples to collect (sampling plan)
+lamp-forge sampling-plan \
+  --prevalence 0.05 \
+  --confidence 0.95 \
+  --sensitivity 0.95
+```
+
+### Script usage
+
+The sampling planner is also importable for use in Jupyter notebooks or
+decision-support tools:
+
+```python
+from lamp_forge.sampling import SamplingParams, sample_size, sampling_plan
+
+# Oilfield SRB monitoring -- detect if >= 5% of wells are positive
+params = SamplingParams(
+    target_prevalence=0.05,
+    confidence=0.95,
+    test_sensitivity=0.95,
+)
+result = sample_size(params)
+print(f"Test {result.n_samples} wells per visit "
+      f"(achieved confidence: {result.achieved_confidence * 100:.1f}%)")
+
+# Table across multiple prevalences
+table = sampling_plan(
+    (0.01, 0.02, 0.05, 0.10, 0.20),
+    confidence=0.95,
+    sensitivity=0.95,
+)
+for row in table:
+    print(f"  p={row.target_prevalence*100:.0f}%: n={row.n_samples}")
+```
+
+**References.**
+
+- Cannon RM & Roe RT (1982). Livestock Disease Surveys: A Field Manual
+  for Veterinarians. Australian Bureau of Animal Health, Canberra.
+- Cameron AR & Baldock FC (1998). A new probability formula for surveys to
+  substantiate freedom from disease. *Prev Vet Med* 34:1-17.
+  doi:10.1016/S0167-5877(97)00081-0
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

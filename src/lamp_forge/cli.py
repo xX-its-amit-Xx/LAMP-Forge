@@ -1975,6 +1975,160 @@ def version() -> None:
     click.echo(f"lamp-forge {__version__}")
 
 
+@cli.command(name="sampling-plan")
+@click.option(
+    "--prevalence",
+    "prevalences",
+    type=float,
+    multiple=True,
+    required=True,
+    metavar="FLOAT",
+    help=(
+        "Minimum design prevalence to detect, as a fraction 0-1 "
+        "(e.g. 0.05 for 5%). Repeat to generate a table across multiple "
+        "prevalences (e.g. --prevalence 0.05 --prevalence 0.10)."
+    ),
+)
+@click.option(
+    "--confidence",
+    "confidence",
+    type=float,
+    default=0.95,
+    show_default=True,
+    help=(
+        "Required detection confidence as a fraction 0-1 "
+        "(e.g. 0.95 for 95% probability of finding at least one "
+        "positive sample if the true prevalence >= design prevalence)."
+    ),
+)
+@click.option(
+    "--sensitivity",
+    "sensitivity",
+    type=float,
+    default=0.95,
+    show_default=True,
+    help=(
+        "LAMP assay analytical sensitivity as a fraction 0-1 "
+        "(probability of a positive result given target is truly present "
+        "above the assay LOD). Default 0.95."
+    ),
+)
+@click.option(
+    "--population-size",
+    "population_size",
+    type=int,
+    default=None,
+    help=(
+        "Total number of sampling units in the population (e.g. number of "
+        "monitored wells, animals in a herd). Omit for effectively infinite "
+        "populations. Supplying this value applies the hypergeometric "
+        "finite-population correction, which reduces required n."
+    ),
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the sampling plan table to a CSV file.",
+)
+def sampling_plan_cmd(
+    prevalences: tuple[float, ...],
+    confidence: float,
+    sensitivity: float,
+    population_size: int | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Calculate surveillance sample sizes for a LAMP panel deployment.
+
+    Answers: "How many wells / animals must I test per site visit to be
+    confident of detecting the target pathogen if it is present at or
+    above a minimum prevalence?"
+
+    Uses the standard freedom-from-disease binomial formula (infinite
+    population) with an optional hypergeometric finite-population
+    correction when --population-size is supplied.
+
+    \b
+    Formula (infinite population):
+        n = ceil[ log(1-confidence) / log(1 - prevalence * sensitivity) ]
+
+    \b
+    Example -- oilfield SRB monitoring, 5%/10%/20% design prevalence:
+        lamp-forge sampling-plan \\
+          --prevalence 0.05 \\
+          --prevalence 0.10 \\
+          --prevalence 0.20 \\
+          --confidence 0.95 \\
+          --sensitivity 0.95
+
+    \b
+    Example -- farm ASFV screening, finite herd of 200 pigs:
+        lamp-forge sampling-plan \\
+          --prevalence 0.05 \\
+          --prevalence 0.10 \\
+          --population-size 200 \\
+          --out-csv results/asfv_sampling_plan.csv
+
+    \b
+    Example -- POC clinic surveillance, detect if >= 1% of patients carry MTB:
+        lamp-forge sampling-plan \\
+          --prevalence 0.01 \\
+          --confidence 0.95 \\
+          --sensitivity 0.95
+    """
+    from lamp_forge.sampling import SamplingParams, sample_size, write_sampling_csv
+
+    try:
+        estimates = []
+        for prev in prevalences:
+            params = SamplingParams(
+                target_prevalence=prev,
+                confidence=confidence,
+                test_sensitivity=sensitivity,
+                population_size=population_size,
+            )
+            estimates.append(sample_size(params))
+    except ValueError as exc:
+        click.secho(f"Parameter error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    pop_label = f"{population_size} units" if population_size is not None else "infinite"
+    click.echo(
+        f"Surveillance sampling plan: "
+        f"confidence={confidence * 100:.0f}%, "
+        f"sensitivity={sensitivity * 100:.0f}%, "
+        f"population={pop_label}"
+    )
+    click.echo("")
+
+    col_prev = 18
+    col_n = 10
+    col_ach = 24
+    header = (
+        f"{'Prevalence (%)':>{col_prev}}  {'n_samples':>{col_n}}  {'Achieved conf (%)':>{col_ach}}"
+    )
+    if population_size is not None:
+        header += "  FPC"
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for e in estimates:
+        fpc_flag = "  yes" if e.finite_population_corrected else "  no"
+        row = (
+            f"{e.target_prevalence * 100:>{col_prev}.2f}  "
+            f"{e.n_samples:>{col_n}}  "
+            f"{e.achieved_confidence * 100:>{col_ach}.2f}"
+        )
+        if population_size is not None:
+            row += fpc_flag
+        click.echo(row)
+
+    if out_csv is not None:
+        write_sampling_csv(estimates, out_csv)
+        click.echo(f"\nSampling plan written to {out_csv}")
+
+
 @cli.command(name="preorder")
 @click.option(
     "--input",
