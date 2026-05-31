@@ -2762,5 +2762,202 @@ def poc_trend(
         click.echo(f"Timeline CSV written to {out_csv}")
 
 
+@cli.command(name="bov-trend")
+@click.option(
+    "--bov-result",
+    "bov_result_paths",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    metavar="PATH",
+    help=(
+        "JSON file produced by 'lamp-forge bov-risk --out-json' for one monitoring "
+        "interval. Repeat once per sample in chronological order (oldest first). "
+        "Mutually exclusive with --csv."
+    ),
+)
+@click.option(
+    "--csv",
+    "csv_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Monitoring-spreadsheet CSV with columns: sample_id, date (optional), "
+        "brsv, bcov, bvdv, ibr, mhae. Rows must be in chronological order "
+        "(oldest first). Mutually exclusive with --bov-result."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full trend assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the chronological pathogen-flag timeline to a CSV file.",
+)
+def bov_trend(
+    bov_result_paths: tuple[Path, ...],
+    csv_path: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Analyse BRD trajectory across consecutive bovine respiratory LAMP panel results.
+
+    Takes a chronological sequence of bovine respiratory LAMP panel results and
+    produces a trend assessment: EMERGING, STABLE_CLEAR, STABLE_ENDEMIC,
+    RESOLVING, or INSUFFICIENT_DATA.
+
+    Key events detected:
+
+    \b
+      - IBR (BoHV-1) newly detected -- mandatory notification may be required
+        in EU/UK/Scandinavian eradication programmes
+      - IBR cleared -- relevant for mandatory control programme compliance
+      - BVDV endemic (positive every interval) -- persistently infected (PI)
+        animal shedding suspected; individual antigen-ELISA screening indicated
+      - Bacterial co-infection count -- M. haemolytica + viral co-detection
+        intervals (highest-mortality BRD pattern)
+
+    Input (pick one):
+
+    \b
+      --bov-result FILE   JSON from 'lamp-forge bov-risk --out-json', repeated
+                          once per monitoring interval, oldest first.
+      --csv FILE          Monitoring-spreadsheet CSV (header required):
+                            sample_id, date (opt), brsv, bcov, bvdv, ibr, mhae
+
+    \b
+    Example -- three-month BRD track on a beef feedlot:
+        lamp-forge bov-trend \\
+          --bov-result results/herd-A/2026-01.json \\
+          --bov-result results/herd-A/2026-02.json \\
+          --bov-result results/herd-A/2026-03.json \\
+          --out-json results/herd-A/trend_Q1.json
+
+    \b
+    Example -- from a monitoring-spreadsheet CSV:
+        lamp-forge bov-trend \\
+          --csv monitoring/herd_A_2026.csv \\
+          --out-json results/herd-A/trend_2026.json
+    """
+    from lamp_forge.bov_risk import assess_bov_risk as _assess_bov_risk
+    from lamp_forge.bov_trend import (
+        analyse_bov_trend,
+        records_from_bov_json,
+        records_from_csv,
+        write_trend_csv,
+        write_trend_json,
+    )
+
+    if csv_path is not None and bov_result_paths:
+        click.secho(
+            "--csv and --bov-result are mutually exclusive. Use one or the other.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+    if csv_path is None and not bov_result_paths:
+        click.secho(
+            "Provide input via --bov-result (one or more JSON files) or --csv.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+
+    try:
+        if csv_path is not None:
+            records = records_from_csv(csv_path)
+        else:
+            records = records_from_bov_json(list(bov_result_paths))
+    except (ValueError, OSError) as exc:
+        click.secho(f"Input error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        trend = analyse_bov_trend(records)
+    except ValueError as exc:
+        click.secho(f"Analysis error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    direction_colour = {
+        "EMERGING": "red",
+        "STABLE_CLEAR": "green",
+        "STABLE_ENDEMIC": "yellow",
+        "RESOLVING": "green",
+        "INSUFFICIENT_DATA": "yellow",
+    }
+    col = direction_colour.get(trend.direction.value, "white")
+    click.echo(f"Bovine respiratory BRD trajectory: {trend.n_samples} sample(s)")
+    click.echo("")
+
+    col_id = max((len(r.sample_id) for r in trend.records), default=10)
+    col_id = max(col_id, 9)
+    header = (
+        f"{'Sample ID':<{col_id}}  {'Date':<12}  "
+        f"{'BRSV':>5} {'BCOV':>5} {'BVDV':>5} {'IBR':>5} {'MHAE':>5}  Alert"
+    )
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for r in trend.records:
+        lvl = _assess_bov_risk(r.flags).alert_level.value
+        date_str = (r.date or "")[:12]
+        click.echo(
+            f"{r.sample_id:<{col_id}}  {date_str:<12}  "
+            f"{'[+]' if r.flags.brsv else '[-]':>5} "
+            f"{'[+]' if r.flags.bcov else '[-]':>5} "
+            f"{'[+]' if r.flags.bvdv else '[-]':>5} "
+            f"{'[+]' if r.flags.ibr else '[-]':>5} "
+            f"{'[+]' if r.flags.mhae else '[-]':>5}  {lvl}"
+        )
+    click.echo("")
+
+    click.secho(f"Trend direction: {trend.direction.value}", fg=col)
+
+    if trend.ibr_newly_detected:
+        click.secho(
+            "  IBR (BoHV-1) NEWLY DETECTED: check mandatory notification obligations "
+            "(EU, UK, Scandinavia).",
+            fg="red",
+            bold=True,
+        )
+    if trend.ibr_cleared:
+        click.secho(
+            "  IBR cleared: confirm with serology before lifting eradication programme "
+            "obligations.",
+            fg="green",
+        )
+    if trend.bvdv_endemic:
+        click.secho(
+            "  BVDV endemic: detected in every interval -- PI animal screening (antigen "
+            "ELISA) is indicated.",
+            fg="yellow",
+        )
+    if trend.bacterial_coinfection_count > 0:
+        click.secho(
+            f"  Bacterial co-infection: M. haemolytica + viral co-detection in "
+            f"{trend.bacterial_coinfection_count} interval(s) "
+            f"(highest-mortality BRD pattern).",
+            fg="yellow",
+        )
+    click.echo(f"  Worst alert level: {trend.worst_alert_level.value}")
+    click.echo("")
+    click.echo(f"Interpretation: {trend.interpretation}")
+    click.echo("")
+    click.echo(f"Recommended action: {trend.recommended_action}")
+
+    if out_json is not None:
+        write_trend_json(trend, out_json)
+        click.echo(f"\nTrend assessment written to {out_json}")
+    if out_csv is not None:
+        write_trend_csv(trend, out_csv)
+        click.echo(f"Timeline CSV written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
