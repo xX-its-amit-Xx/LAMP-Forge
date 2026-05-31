@@ -1627,6 +1627,183 @@ def farm_risk(
         click.echo(f"CSV summary written to {out_csv}")
 
 
+@cli.command(name="poc-risk")
+@click.option("--mtb", "mtb", is_flag=True, default=False, help="MTB (rpoB) positive.")
+@click.option(
+    "--cdiff", "cdiff", is_flag=True, default=False, help="C. difficile toxin B (tcdB) positive."
+)
+@click.option("--sars2", "sars2", is_flag=True, default=False, help="SARS-CoV-2 (N gene) positive.")
+@click.option(
+    "--flu-a", "flu_a", is_flag=True, default=False, help="Influenza A (M gene) positive."
+)
+@click.option(
+    "--gas", "gas", is_flag=True, default=False, help="Group A Streptococcus (speB) positive."
+)
+@click.option(
+    "--input-json",
+    "input_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Read pathogen flags from a JSON file instead of individual flags. "
+        "Expected keys: mtb, cdiff, sars2, flu_a, gas (bool). "
+        "Missing keys default to false."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary to a file.",
+)
+def poc_risk(
+    mtb: bool,
+    cdiff: bool,
+    sars2: bool,
+    flu_a: bool,
+    gas: bool,
+    input_json: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Interpret a human POC LAMP panel as a structured clinical alert.
+
+    Takes the positivity flags for the five pathogens monitored by a
+    BioVind-style human point-of-care LAMP panel and returns a structured
+    alert with level, score, interpretation, clinical action flags, and
+    recommended action.
+
+    MTB (tuberculosis) is mandatorily notifiable in virtually all
+    jurisdictions -- a positive triggers IMMEDIATE public-health reporting
+    and airborne isolation.  Confirm at a national reference laboratory
+    before initiating therapy.
+
+    Panel targets:
+    \b
+        --mtb     Mycobacterium tuberculosis     rpoB    (Recipe 1)
+        --cdiff   Clostridioides difficile tcdB  tcdB    (Recipe 22)
+        --sars2   SARS-CoV-2                     N gene  (Recipe 2)
+        --flu-a   Influenza A (pan-IAV)          M gene  (Recipe 12)
+        --gas     Group A Streptococcus          speB    (Recipe 21)
+
+    \b
+    Example -- C. difficile detected in a hospital patient:
+        lamp-forge poc-risk --cdiff
+
+    \b
+    Example -- SARS-CoV-2 + GAS pharyngitis co-detection:
+        lamp-forge poc-risk --sars2 --gas
+
+    \b
+    Example -- full panel from a JSON flags file:
+        lamp-forge poc-risk --input-json results/poc_flags.json \
+          --out-json results/poc_assessment.json
+    """
+    import json as json_mod
+
+    from lamp_forge.poc_risk import (
+        PocAlertLevel,
+        PocPanelFlags,
+        assess_poc_risk,
+        flags_from_dict,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    if input_json is not None:
+        with input_json.open(encoding="utf-8") as fh:
+            raw: dict[str, object] = json_mod.load(fh)
+        flags = flags_from_dict(raw)
+    else:
+        flags = PocPanelFlags(mtb=mtb, cdiff=cdiff, sars2=sars2, flu_a=flu_a, gas=gas)
+
+    assessment = assess_poc_risk(flags)
+
+    # --- Panel table ----------------------------------------------------------
+    click.echo("Human POC LAMP panel results:")
+    target_rows = [
+        ("MTB", "rpoB", assessment.flags.mtb),
+        ("CDIFF", "tcdB", assessment.flags.cdiff),
+        ("SARS2", "N gene", assessment.flags.sars2),
+        ("FLU_A", "M gene", assessment.flags.flu_a),
+        ("GAS", "speB", assessment.flags.gas),
+    ]
+    for label, gene, positive in target_rows:
+        symbol = "+" if positive else "-"
+        click.echo(f"  {label:<6} ({gene:<6})  [{symbol}]")
+
+    click.echo("")
+
+    # --- Alert level (colour-coded) ------------------------------------------
+    level_color = {
+        PocAlertLevel.CRITICAL: "red",
+        PocAlertLevel.HIGH: "red",
+        PocAlertLevel.MODERATE: "yellow",
+        PocAlertLevel.LOW: "yellow",
+        PocAlertLevel.NEGATIVE: "green",
+    }
+    color = level_color[assessment.alert_level]
+    click.secho(
+        f"Alert level : {assessment.alert_level.value}  (score {assessment.alert_score}/100)",
+        fg=color,
+        bold=(assessment.alert_level in (PocAlertLevel.CRITICAL, PocAlertLevel.HIGH)),
+    )
+
+    if assessment.immediate_report_required:
+        click.secho(
+            "  IMMEDIATE REPORT REQUIRED: notify national public health authority.",
+            fg="red",
+            bold=True,
+        )
+        click.secho(
+            f"  Notifiable detection(s): {', '.join(assessment.notifiable_targets)}",
+            fg="red",
+        )
+
+    if assessment.contact_precautions_required:
+        click.secho(
+            "  Contact precautions required"
+            + (" + airborne isolation (MTB)" if assessment.flags.mtb else "")
+            + ".",
+            fg="yellow",
+        )
+
+    if assessment.antiviral_indicated:
+        click.secho(
+            "  Antiviral treatment indicated -- check treatment window.",
+            fg="yellow",
+        )
+
+    if assessment.antibiotic_indicated:
+        click.secho(
+            "  Antibiotic therapy indicated (GAS pharyngitis).",
+            fg="yellow",
+        )
+
+    click.echo("")
+    click.echo("Interpretation:")
+    click.echo(f"  {assessment.interpretation}")
+    click.echo("")
+    click.echo("Recommended action:")
+    click.echo(f"  {assessment.recommended_action}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
 @cli.command(name="version")
 def version() -> None:
     """Print version and exit."""
