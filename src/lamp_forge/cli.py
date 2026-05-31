@@ -1329,5 +1329,242 @@ def version() -> None:
     click.echo(f"lamp-forge {__version__}")
 
 
+@cli.command(name="preorder")
+@click.option(
+    "--input",
+    "input_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="primer_sets.json produced by 'lamp-forge run'.",
+)
+@click.option(
+    "--na-type",
+    "na_type",
+    type=click.Choice(["rna", "dna"], case_sensitive=False),
+    default="dna",
+    show_default=True,
+    help=(
+        "Target nucleic-acid type. 'rna' enables the RT-LAMP Tm check "
+        "(use for PRRSV, FMDV, avian influenza, NDV, SARS-CoV-2, etc.)."
+    ),
+)
+@click.option(
+    "--sample-volume",
+    "sample_volume_ul",
+    type=float,
+    required=True,
+    help="Sample volume input to extraction (uL).",
+)
+@click.option(
+    "--efficiency",
+    "extraction_efficiency",
+    type=float,
+    default=0.50,
+    show_default=True,
+    help="Extraction efficiency as a fraction 0-1 (e.g. 0.50 for 50%).",
+)
+@click.option(
+    "--eluate-volume",
+    "eluate_volume_ul",
+    type=float,
+    required=True,
+    help="Volume of extraction eluate (uL).",
+)
+@click.option(
+    "--reaction-input",
+    "reaction_input_ul",
+    type=float,
+    required=True,
+    help="Eluate added to each LAMP reaction (uL).",
+)
+@click.option(
+    "--preset",
+    type=click.Choice(["dna-lamp", "rt-lamp", "fast-lamp"], case_sensitive=False),
+    default=None,
+    help=("TTP chemistry preset. Defaults to 'rt-lamp' when --na-type rna, otherwise 'dna-lamp'."),
+)
+@click.option(
+    "--device-window",
+    "device_window",
+    type=float,
+    default=60.0,
+    show_default=True,
+    help="Device run window (minutes). Default 60 min (BioVind BioID).",
+)
+@click.option(
+    "--rt-min-tm",
+    "rt_min_tm",
+    type=float,
+    default=63.0,
+    show_default=True,
+    help=(
+        "Minimum Tm (degC) for core primers in one-step RT-LAMP. Only applies when --na-type rna."
+    ),
+)
+@click.option(
+    "--top-n",
+    "top_n",
+    default=None,
+    type=int,
+    help="Assess only the top-N ranked sets (default: all).",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write result summary to a key-value CSV file.",
+)
+def preorder(
+    input_path: Path,
+    na_type: str,
+    sample_volume_ul: float,
+    extraction_efficiency: float,
+    eluate_volume_ul: float,
+    reaction_input_ul: float,
+    preset: str | None,
+    device_window: float,
+    rt_min_tm: float,
+    top_n: int | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Combined pre-order readiness check: LOD + TTP + RT-LAMP in one pass.
+
+    Chains three checks into a single GO / WARNING / NO-GO verdict:
+
+    \b
+      1. LOD_95 -- Poisson model: how many copies/mL are detectable at 95%?
+      2. TTP at LOD_95 -- will the reaction turn positive in time on the device?
+      3. RT-LAMP Tm check (RNA targets only) -- are core primers >= 63 degC?
+
+    Use this before ordering primers to confirm the designed assay will work
+    end-to-end on your specific device / extraction chain.
+
+    \b
+    Example (PRRSV ORF7, 1 mL oral fluid, 50% RNA extraction, 60-min device):
+        lamp-forge preorder \\
+          --input results/prrsv_orf7/primer_sets.json \\
+          --na-type rna \\
+          --sample-volume 1000 \\
+          --efficiency 0.50 \\
+          --eluate-volume 100 \\
+          --reaction-input 5 \\
+          --device-window 60
+
+    \b
+    Example (SRB dsrB, 1 mL produced water, 40% DNA extraction):
+        lamp-forge preorder \\
+          --input results/srb_dsrB/primer_sets.json \\
+          --na-type dna \\
+          --sample-volume 1000 \\
+          --efficiency 0.40 \\
+          --eluate-volume 100 \\
+          --reaction-input 5
+    """
+    import json
+
+    from lamp_forge.lod import ExtractionParams
+    from lamp_forge.preorder import PreorderStatus, run_preorder, write_preorder_csv
+    from lamp_forge.rt_lamp import RtLampParams, TargetNucleicAcid
+    from lamp_forge.ttp import TtpParams, TtpPreset
+
+    with input_path.open(encoding="utf-8") as fh:
+        data: dict[str, object] = json.load(fh)
+
+    sets_data = data.get("primer_sets", [])
+    if not isinstance(sets_data, list) or not sets_data:
+        click.secho("No primer sets found in the input file.", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        extraction = ExtractionParams(
+            sample_volume_ul=sample_volume_ul,
+            extraction_efficiency=extraction_efficiency,
+            eluate_volume_ul=eluate_volume_ul,
+            reaction_input_ul=reaction_input_ul,
+        )
+    except ValueError as exc:
+        click.secho(f"Extraction parameter error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    target_na = TargetNucleicAcid(na_type.lower())
+
+    resolved_preset = preset or ("rt-lamp" if target_na is TargetNucleicAcid.RNA else "dna-lamp")
+    preset_enum = TtpPreset(resolved_preset.lower())
+    ttp_params = TtpParams.from_preset(preset_enum, device_window_min=device_window)
+
+    try:
+        rt_params = RtLampParams(rt_min_tm=rt_min_tm)
+    except ValueError as exc:
+        click.secho(f"RT-LAMP parameter error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    result = run_preorder(
+        sets_data,
+        extraction,
+        ttp_params,
+        target_na=target_na,
+        rt_params=rt_params,
+        top_n=top_n,
+    )
+
+    # --- header ---------------------------------------------------------------
+    click.echo(
+        f"Pre-order readiness check -- {na_type.upper()} target, "
+        f"{result.n_sets_assessed} set(s) assessed"
+    )
+    click.echo(
+        f"Extraction: {sample_volume_ul:.0f} uL sample, "
+        f"{extraction_efficiency * 100:.0f}% efficiency, "
+        f"{eluate_volume_ul:.0f} uL eluate, "
+        f"{reaction_input_ul:.1f} uL to reaction"
+    )
+    click.echo(
+        f"TTP model: {resolved_preset} "
+        f"(TTP@1cp={ttp_params.ttp_one_copy_min:.1f} min, "
+        f"slope={ttp_params.slope_min_per_decade:.1f} min/decade)"
+    )
+    click.echo(f"Device window: {device_window:.0f} min")
+    click.echo("")
+
+    # --- LOD ------------------------------------------------------------------
+    eff_ul = extraction.copies_per_rxn_per_copy_per_ul
+    click.echo(
+        f"LOD_95 :  {result.lod_95_copies_per_rxn:.3f} copies/reaction  =>  "
+        f"{result.lod_95_copies_per_ml:.1f} copies/mL  "
+        f"(effective sample {eff_ul:.2f} uL/reaction)"
+    )
+
+    # --- TTP ------------------------------------------------------------------
+    ttp_status = "PASS" if result.ttp_in_window else "FAIL"
+    click.echo(f"TTP at LOD_95 :  {result.ttp_at_lod_min:.1f} min  [{ttp_status}]")
+
+    # --- RT-LAMP --------------------------------------------------------------
+    if target_na is TargetNucleicAcid.RNA:
+        rt_ok = result.n_sets_rt_ok
+        rt_total = result.n_sets_assessed
+        rt_label = "OK" if rt_ok == rt_total else "WARNING"
+        click.echo(f"RT-LAMP check :  {rt_ok}/{rt_total} sets optimized  [{rt_label}]")
+    else:
+        click.echo("RT-LAMP check :  N/A (DNA target)")
+
+    click.echo("")
+
+    # --- Verdict --------------------------------------------------------------
+    if result.status is PreorderStatus.GO:
+        click.secho(f"Overall status: {result.status}", fg="green")
+    elif result.status is PreorderStatus.WARNING:
+        click.secho(f"Overall status: {result.status}", fg="yellow")
+    else:
+        click.secho(f"Overall status: {result.status}", fg="red")
+
+    for reason in result.reasons:
+        click.echo(f"  {reason}")
+
+    if out_csv is not None:
+        write_preorder_csv(result, out_csv)
+        click.echo(f"\nResult written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
