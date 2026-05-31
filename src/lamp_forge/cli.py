@@ -2399,5 +2399,185 @@ def souring_trend(
         click.echo(f"Timeline CSV written to {out_csv}")
 
 
+@cli.command(name="farm-trend")
+@click.option(
+    "--farm-result",
+    "farm_result_paths",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    metavar="PATH",
+    help=(
+        "JSON file produced by 'lamp-forge farm-risk --out-json' for one monitoring "
+        "interval. Repeat once per sample in chronological order (oldest first). "
+        "Mutually exclusive with --csv."
+    ),
+)
+@click.option(
+    "--csv",
+    "csv_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Monitoring-spreadsheet CSV with columns: sample_id, date (optional), "
+        "asfv, fmdv, aiv, ndv, prrsv. Rows must be in chronological order "
+        "(oldest first). Mutually exclusive with --farm-result."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full trend assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the chronological pathogen-flag timeline to a CSV file.",
+)
+def farm_trend(
+    farm_result_paths: tuple[Path, ...],
+    csv_path: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Analyse biosecurity trajectory across consecutive farm LAMP panel results.
+
+    Takes a chronological sequence of farm-biosecurity LAMP panel results and
+    produces a trend assessment: EMERGING, STABLE_CLEAR, STABLE_ENDEMIC,
+    RESOLVING, or INSUFFICIENT_DATA.
+
+    Key events detected:
+
+    \b
+      - WOAH-notifiable pathogen (ASFV/FMDV/AIV/NDV) newly detected
+      - WOAH-notifiable pathogen cleared
+      - PRRSV endemic herd status (consistently positive)
+
+    Input (pick one):
+
+    \b
+      --farm-result FILE   JSON from 'lamp-forge farm-risk --out-json', repeated
+                           once per monitoring interval, oldest first.
+      --csv FILE           Monitoring-spreadsheet CSV (header required):
+                             sample_id, date (opt), asfv, fmdv, aiv, ndv, prrsv
+
+    \b
+    Example -- three-month outbreak track on a poultry farm (AIV detected):
+        lamp-forge farm-trend \\
+          --farm-result results/farm-A/2026-01.json \\
+          --farm-result results/farm-A/2026-02.json \\
+          --farm-result results/farm-A/2026-03.json \\
+          --out-json results/farm-A/trend_Q1.json
+
+    \b
+    Example -- from a monitoring-spreadsheet CSV:
+        lamp-forge farm-trend \\
+          --csv monitoring/farm_A_2026.csv \\
+          --out-json results/farm-A/trend_2026.json
+    """
+    from lamp_forge.farm_risk import assess_farm_risk as _assess_farm_risk
+    from lamp_forge.farm_trend import (
+        analyse_farm_trend,
+        records_from_csv,
+        records_from_farm_json,
+        write_trend_csv,
+        write_trend_json,
+    )
+
+    if csv_path is not None and farm_result_paths:
+        click.secho(
+            "--csv and --farm-result are mutually exclusive. Use one or the other.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+    if csv_path is None and not farm_result_paths:
+        click.secho(
+            "Provide input via --farm-result (one or more JSON files) or --csv.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+
+    try:
+        if csv_path is not None:
+            records = records_from_csv(csv_path)
+        else:
+            records = records_from_farm_json(list(farm_result_paths))
+    except (ValueError, OSError) as exc:
+        click.secho(f"Input error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        trend = analyse_farm_trend(records)
+    except ValueError as exc:
+        click.secho(f"Analysis error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    direction_colour = {
+        "EMERGING": "red",
+        "STABLE_CLEAR": "green",
+        "STABLE_ENDEMIC": "yellow",
+        "RESOLVING": "green",
+        "INSUFFICIENT_DATA": "yellow",
+    }
+    col = direction_colour.get(trend.direction.value, "white")
+    click.echo(f"Farm biosecurity trajectory: {trend.n_samples} sample(s)")
+    click.echo("")
+
+    col_id = max((len(r.sample_id) for r in trend.records), default=10)
+    col_id = max(col_id, 9)
+    header = (
+        f"{'Sample ID':<{col_id}}  {'Date':<12}  "
+        f"{'ASFV':>5} {'FMDV':>5} {'AIV':>5} {'NDV':>5} {'PRRSV':>5}  Alert"
+    )
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for r in trend.records:
+        lvl = _assess_farm_risk(r.flags).alert_level.value
+        date_str = (r.date or "")[:12]
+        click.echo(
+            f"{r.sample_id:<{col_id}}  {date_str:<12}  "
+            f"{'[+]' if r.flags.asfv else '[-]':>5} "
+            f"{'[+]' if r.flags.fmdv else '[-]':>5} "
+            f"{'[+]' if r.flags.aiv else '[-]':>5} "
+            f"{'[+]' if r.flags.ndv else '[-]':>5} "
+            f"{'[+]' if r.flags.prrsv else '[-]':>5}  {lvl}"
+        )
+    click.echo("")
+
+    click.secho(f"Trend direction: {trend.direction.value}", fg=col)
+
+    if trend.notifiable_newly_detected:
+        click.secho(
+            f"  NEWLY DETECTED (notifiable): {', '.join(trend.notifiable_newly_detected)}",
+            fg="red",
+            bold=True,
+        )
+    if trend.notifiable_cleared:
+        click.secho(
+            f"  Cleared (notifiable): {', '.join(trend.notifiable_cleared)}",
+            fg="green",
+        )
+    if trend.prrsv_endemic:
+        click.secho("  PRRSV endemic: detected in every interval.", fg="yellow")
+    click.echo(f"  Worst alert level: {trend.worst_alert_level.value}")
+    click.echo("")
+    click.echo(f"Interpretation: {trend.interpretation}")
+    click.echo("")
+    click.echo(f"Recommended action: {trend.recommended_action}")
+
+    if out_json is not None:
+        write_trend_json(trend, out_json)
+        click.echo(f"\nTrend assessment written to {out_json}")
+    if out_csv is not None:
+        write_trend_csv(trend, out_csv)
+        click.echo(f"Timeline CSV written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
