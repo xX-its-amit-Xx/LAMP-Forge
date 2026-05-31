@@ -1,0 +1,78 @@
+# LAMP-Forge config: Porcine Epidemic Diarrhea Virus (PEDV) N-gene RT-LAMP
+# ============================================================================
+# Target: Broad PEDV detection via the N (nucleocapsid protein) gene
+# Why this target: PEDV is a devastating swine enteric coronavirus that spread
+# globally from 2013 onward, killing >10% of the US sow herd in 2013-14 and
+# causing recurrent outbreaks across Asia, Europe, and the Americas.  PEDV
+# nearly 100% case-fatality in neonatal piglets (<1 week old); rapid on-farm
+# detection is critical for triggering biosecurity interventions before the
+# virus spreads through farrowing barns.
+#
+# The N gene (~1326 nt CDS) encodes the nucleocapsid protein, the most
+# abundant structural protein of the virion.  It is the most conserved gene
+# across all PEDV genotypes (classical G1a/G1b strains and the highly virulent
+# G2a/G2b variants including USA-Ohio851-2013 and the Korean DR13-like strains)
+# and is the basis of published PEDV RT-PCR and RT-LAMP diagnostic assays
+# (He et al. 2019; Kim et al. 2014).  Unlike the spike (S) gene, which diverges
+# sharply between classical and virulent strains (~>5% nt divergence), the N
+# gene provides broad inclusivity across all current variants at a single
+# conserved primer landing zone -- the correct scope for a detection assay.
+#
+# PEDV is a positive-sense ssRNA virus (Betacoronavirus / Alphacoronavirus 1),
+# so detection requires RT-LAMP.  One-step RT-LAMP (Bst 2.0 WarmStart +
+# NEB RTx or WarmStart RTx) at 63-65 degC delivers a yes/no result in
+# under 30 minutes, fully compatible with BioVind-style portable platforms.
+#
+# PEDV co-circulates with Transmissible Gastroenteritis Virus (TGEV) and
+# Porcine Deltacoronavirus (PDCoV) in pig herds; the off-target panel must
+# include both to ensure cross-coronavirus specificity.  PEDV can be combined
+# with PRRSV (Recipe 11) and ASFV (Recipe 7) in a multi-target porcine panel
+# using lamp-forge panel.
+#
+# After designing, verify RT-LAMP readiness before ordering:
+#   lamp-forge rt-check --input results/pedv_N_gene/primer_sets.json --na-type rna
+# ============================================================================
+
+target:
+  name: pedv_N_gene
+  taxon_id: 27317              # Porcine epidemic diarrhea virus
+  gene: N                      # nucleocapsid protein; alt: "nucleoprotein" / "N protein"
+  max_sequences: 30            # span G1a/G1b classical strains + G2a/G2b virulent variants
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Porcine enteric coronaviruses and co-circulating gut pathogens:
+  #   tgev.fasta                  - Transmissible gastroenteritis virus; closest porcine
+  #                                 coronavirus (Alphacoronavirus 1, NC_038861.1 region)
+  #   pdcov.fasta                 - Porcine deltacoronavirus; emerging enteric coronavirus
+  #                                 (NC_029977.1 or KU984334.1)
+  #   porcine_rotavirus_a.fasta   - Most common cause of neonatal piglet diarrhea;
+  #                                 co-circulates in farrowing barns (NC_011509.1, VP4)
+  #   sus_scrofa_fragment.fasta   - Sus scrofa host DNA from intestinal content / swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # tight -- TGEV shares alphacoronavirus N-gene family
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25              # RNA virus: narrower window catches structurally constrained blocks
+  entropy_threshold: 0.30     # N gene is moderately conserved across PEDV variants;
+                               # looser than bacterial housekeeping genes (0.20 bits)
+  min_region_length: 200       # N CDS is ~1326 nt -- expect 2-4 conserved windows
+
+primer:
+  tm_min: 63.0                 # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                 # PEDV N gene is ~38-42% GC; wide margins for variant diversity
+  gc_max: 55.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/pedv_N_gene
+  top_n: 10
+  generate_html: true
+  generate_csv: true

@@ -3785,3 +3785,209 @@ for row in table:
   doi:10.1016/S0167-5877(97)00081-0
 - Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 27 -- Porcine Epidemic Diarrhea Virus (PEDV) via RT-LAMP (on-farm neonatal biosecurity)
+
+**Goal.** Detect Porcine Epidemic Diarrhea Virus (PEDV) from intestinal content,
+rectal swab, or faecal samples in farrowing barns -- fast enough to trigger immediate
+biosecurity interventions before the virus spreads to adjacent litters.
+
+**Why it's interesting.** PEDV devastated the US pig industry in 2013-14, killing
+an estimated >8 million piglets and eliminating >10% of the US sow herd in its
+first year.  Near-100% case fatality in neonatal piglets (<1 week old) makes it
+the highest-mortality enteric disease in swine production.  The virus spreads
+extremely rapidly through faecal-oral contact and aerosol (barn-to-barn spread
+documented).  A portable LAMP result at the farm in under 60 minutes -- before
+a potentially PEDV-positive transport vehicle leaves -- is exactly the use case
+the BioVind BioID platform targets.
+
+PEDV is a **positive-sense ssRNA virus** (*Alphacoronavirus 1*, the same genus as
+the common-cold coronavirus 229E) -- so detection requires **RT-LAMP**.  Two major
+genotype clusters circulate: **G1** (classical strains including the European CV777
+reference and the attenuated Korean DR13 vaccine strain) and **G2** (virulent strains
+including USA-Ohio851-2013 and the AH2012 and CH/FJND-3/2011 Asian field strains that
+drove global spread).  G1 and G2 share ~96-99% N-gene nucleotide identity, so a
+conserved N-gene LAMP assay detects both without genotype discrimination -- which is
+the correct scope for a first-pass detection assay.  Genotype-level characterisation
+can follow at a reference laboratory if needed.
+
+**Target.** The **N gene** (nucleocapsid protein, ~1326 nt CDS) -- the most conserved
+coding region across all PEDV genotypes and the basis of published PEDV RT-PCR and
+RT-LAMP diagnostic assays (He et al. 2019; Kim et al. 2014).  Unlike the spike (S)
+gene, which diverges >5% nt between G1 and G2, the N gene sits in a part of the
+coronavirus genome under tight assembly constraint, yielding multiple conserved
+blocks usable for LAMP primer placement.
+
+Use the ready-made config at `config/pedv_N_gene.yaml`, or paste the block below:
+
+```yaml
+target:
+  name: pedv_N_gene
+  taxon_id: 27317          # Porcine epidemic diarrhea virus
+  gene: N                  # nucleocapsid protein; alt: "nucleoprotein" / "N protein"
+  max_sequences: 30        # span G1a/G1b classical strains + G2a/G2b virulent variants
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- TGEV shares alphacoronavirus N-gene family
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.30        # RNA-virus drift: looser than bacteria
+  min_region_length: 200
+
+primer:
+  tm_min: 63.0                   # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                   # PEDV N gene is ~38-42% GC; wide margins for variant diversity
+  gc_max: 55.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/pedv_N_gene
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config notes.**
+
+- `primer.tm_min: 63.0` -- one-step RT-LAMP at 63-65 degC; same rationale as
+  PRRSV (Recipe 11), AIV (Recipe 12), FMDV (Recipe 14), and NDV (Recipe 18).
+- `conservation.entropy_threshold: 0.30` -- slightly looser than bacterial
+  housekeeping genes (0.20 bits) to tolerate synonymous drift between G1 and G2
+  while still resolving the tight N-gene core blocks.
+- `min_identity_threshold: 0.85` -- tighter than the default 0.80 because TGEV
+  shares the alphacoronavirus N-gene fold; 0.85 catches potential cross-reactivity.
+
+**Off-target panel.** The critical differentials are other porcine enteric
+coronaviruses that co-circulate in farrowing barns and cause indistinguishable
+diarrhoea in neonatal piglets:
+
+| File | Source | Why |
+|---|---|---|
+| `tgev.fasta` | Transmissible gastroenteritis virus (NC_038861.1 or D00563.1 region) | Closest porcine coronavirus (Alphacoronavirus 1 -- same species as PEDV); shares N-gene structural motifs |
+| `pdcov.fasta` | Porcine deltacoronavirus (NC_029977.1 or KU984334.1) | Emerging enteric coronavirus; co-circulates and causes identical clinical signs in neonates |
+| `porcine_rotavirus_a.fasta` | Porcine rotavirus A (NC_011509.1, VP4 segment) | Most common cause of neonatal piglet diarrhoea; co-infects with PEDV during outbreaks |
+| `sus_scrofa_fragment.fasta` | Subset of *Sus scrofa* genome (Sscrofa11.1) | Host DNA from intestinal content or rectal swab |
+
+**Expected output.** The N gene (~1326 nt) typically yields 2-4 conserved windows
+usable for LAMP.  Top-scoring sets should have zero flagged off-target hits across
+the panel -- PEDV is genetically distant from rotavirus (double-stranded RNA
+Reoviridae), and the identity thresholds should clearly separate it from TGEV and
+PDCoV.  If TGEV identity hits appear, raise `min_identity_threshold` to 0.90 and
+prefer primer sets whose landing zones overlap the highly divergent hypervariable
+loop of the PEDV N-gene rather than the shared N-terminal RNA-binding domain.
+
+**Verify RT-LAMP readiness.**
+
+```bash
+lamp-forge rt-check \
+  --input results/pedv_N_gene/primer_sets.json \
+  --na-type rna \
+  --out-csv results/pedv_N_gene/rt_check.csv
+```
+
+Sets marked **NOT OPTIMIZED** have at least one core primer below 63.0 degC.
+Because `primer.tm_min: 63.0` is already set in this config, all sets should
+pass -- but verify before ordering.
+
+**Estimate LOD before ordering.** Intestinal content from affected piglets is a
+moderately inhibitory matrix.  A standard protocol (0.5 g intestinal content,
+RNA extraction into 100 uL eluate, 5 uL to a 25 uL RT-LAMP reaction) gives:
+
+```bash
+lamp-forge lod \
+  --sample-volume 500 \
+  --efficiency 0.40 \
+  --eluate-volume 100 \
+  --reaction-input 5 \
+  --out-csv results/pedv_N_gene/lod_intestinal.csv
+```
+
+Effective sample = 500 x 0.4 x (5/100) = 10 uL per reaction.  LOD_95 approx
+300 copies/mL of intestinal homogenate.  PEDV titres in acutely infected
+piglet intestines can exceed 10^7 genome equivalents/mL -- orders-of-magnitude
+above this LOD -- so even a simple extraction protocol is sufficient for
+clinical detection.
+
+**Confirm TTP within the BioVind device window.**
+
+```bash
+lamp-forge ttp \
+  --preset rt-lamp \
+  --device-window 60
+```
+
+At LOD_95 (~3 copies/reaction), TTP is expected around 55-60 min for a
+one-step RT-LAMP protocol; the device window is tight.  Titres encountered
+during acute clinical infection (10^3-10^7 copies/reaction) will read out
+at 30-45 min, well within the 60-min window.
+
+**Multiplex with other farm-biosecurity targets.** PEDV outbreaks frequently
+co-occur with PRRSV (immunosuppression increases susceptibility) and can be
+confused with porcine transmissible gastroenteritis on clinical grounds.
+Design each target independently, then combine:
+
+```bash
+lamp-forge panel \
+  --set PEDV=results/pedv_N_gene/primer_sets.json \
+  --set PRRSV=results/prrsv_ORF7/primer_sets.json \
+  --set ASFV=results/asfv_p72/primer_sets.json \
+  --top-per-target 5 \
+  --out results/swine_biosecurity_3plex
+```
+
+Then calculate the pooling sheet:
+
+```bash
+lamp-forge pool \
+  --panel results/swine_biosecurity_3plex/panel.json \
+  --stock-conc 200 \
+  --total-volume 500 \
+  --out results/swine_biosecurity_3plex/pool_sheet.csv
+```
+
+And export the PEDV primers to IDT for ordering:
+
+```bash
+lamp-forge export \
+  --input results/pedv_N_gene/primer_sets.json \
+  --format idt \
+  --target-label PEDV_N \
+  --out orders/pedv_N_idt_order.csv
+```
+
+**Field note.** PEDV spreads via "biosecurity-defying" fomite transmission --
+contaminated boots, vehicles, and feed-delivery equipment.  A positive PEDV
+result on a batch sample from a recently-delivered load of weaned piglets
+should trigger immediate pen quarantine, deep cleaning, and notification of
+nearby farms sourcing from the same supplier.  Position this assay as a
+**triage/detection** tool; PEDV is not a statutory notifiable disease in most
+jurisdictions (unlike ASFV or FMDV), but many national swine health programmes
+recommend immediate herd reporting.  Validate against a panel of known
+positive and negative intestinal samples before deploying as a routine
+farm assay.
+
+**References.**
+
+- He X et al. (2019) Development and evaluation of a RT-LAMP assay for rapid
+  detection of porcine epidemic diarrhea virus.  *Transbound Emerg Dis*
+  66(1):431-439. doi:10.1111/tbed.13044
+- Kim SY et al. (2014) Loop-mediated isothermal amplification assay for
+  rapid, sensitive detection of porcine epidemic diarrhea virus.
+  *J Virol Methods* 208:92-96. doi:10.1016/j.jviromet.2014.08.001
+- Stevenson GW et al. (2013) Emergence of porcine epidemic diarrhea virus
+  in the United States.  *J Vet Diagn Invest* 25(5):649-654.
+  doi:10.1177/1040638713501675
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
