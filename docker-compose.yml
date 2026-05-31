@@ -74,6 +74,13 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      # Serialize startup so web finishes initialising the shared
+      # `lamp_forge_data` volume (seeded from /work/data/* in the image)
+      # before worker mounts it. Otherwise both containers race to copy the
+      # image's pre-created subdirs into the volume and one fails with
+      # `mkdir ... : file exists`.
+      web:
+        condition: service_started
     restart: unless-stopped
     deploy:
       replicas: ${LAMP_FORGE_WORKER_REPLICAS:-1}
