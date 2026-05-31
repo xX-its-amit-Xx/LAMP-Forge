@@ -1474,6 +1474,159 @@ def mic_risk(
         click.echo(f"CSV summary written to {out_csv}")
 
 
+@cli.command(name="farm-risk")
+@click.option("--asfv", "asfv", is_flag=True, default=False, help="ASFV (B646L / p72) positive.")
+@click.option("--fmdv", "fmdv", is_flag=True, default=False, help="FMDV (3Dpol) positive.")
+@click.option(
+    "--aiv", "aiv", is_flag=True, default=False, help="Avian influenza A (M gene) positive."
+)
+@click.option(
+    "--ndv", "ndv", is_flag=True, default=False, help="Newcastle disease virus (M gene) positive."
+)
+@click.option("--prrsv", "prrsv", is_flag=True, default=False, help="PRRSV (ORF7) positive.")
+@click.option(
+    "--input-json",
+    "input_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Read pathogen flags from a JSON file instead of individual flags. "
+        "Expected keys: asfv, fmdv, aiv, ndv, prrsv (bool). "
+        "Missing keys default to false."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary to a file.",
+)
+def farm_risk(
+    asfv: bool,
+    fmdv: bool,
+    aiv: bool,
+    ndv: bool,
+    prrsv: bool,
+    input_json: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Interpret a farm-biosecurity LAMP panel as a structured alert.
+
+    Takes the positivity flags for the five pathogens monitored by a
+    BioVind-style farm-biosecurity panel and returns a structured alert
+    with level, score, interpretation, and recommended action.
+
+    WOAH-listed notifiable pathogens (ASFV, FMDV, AIV, NDV) trigger an
+    immediate-report flag -- confirm at a national reference laboratory before
+    depopulation or trade restrictions are enforced.
+
+    Panel targets:
+    \b
+        --asfv    African swine fever virus        B646L / p72  (Recipe 7)
+        --fmdv    Foot-and-mouth disease virus     3Dpol        (Recipe 14)
+        --aiv     Avian influenza A (pan-IAV)      M gene       (Recipe 12)
+        --ndv     Newcastle disease virus          M gene       (Recipe 18)
+        --prrsv   PRRS virus                       ORF7         (Recipe 11)
+
+    \b
+    Example -- ASFV detected on a pig farm:
+        lamp-forge farm-risk --asfv
+
+    \b
+    Example -- full panel from a JSON flags file:
+        lamp-forge farm-risk --input-json results/farm_flags.json \
+          --out-json results/farm_assessment.json
+
+    \b
+    Example -- PRRSV + NDV co-detected:
+        lamp-forge farm-risk --prrsv --ndv
+    """
+    import json as json_mod
+
+    from lamp_forge.farm_risk import (
+        FarmAlertLevel,
+        FarmPanelFlags,
+        assess_farm_risk,
+        flags_from_dict,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    if input_json is not None:
+        with input_json.open(encoding="utf-8") as fh:
+            raw: dict[str, object] = json_mod.load(fh)
+        flags = flags_from_dict(raw)
+    else:
+        flags = FarmPanelFlags(asfv=asfv, fmdv=fmdv, aiv=aiv, ndv=ndv, prrsv=prrsv)
+
+    assessment = assess_farm_risk(flags)
+
+    # --- Panel table ----------------------------------------------------------
+    click.echo("Farm-biosecurity LAMP panel results:")
+    target_rows = [
+        ("ASFV", "B646L", assessment.flags.asfv),
+        ("FMDV", "3Dpol", assessment.flags.fmdv),
+        ("AIV", "M gene", assessment.flags.aiv),
+        ("NDV", "M gene", assessment.flags.ndv),
+        ("PRRSV", "ORF7", assessment.flags.prrsv),
+    ]
+    for label, gene, positive in target_rows:
+        symbol = "+" if positive else "-"
+        click.echo(f"  {label:<6} ({gene:<6})  [{symbol}]")
+
+    click.echo("")
+
+    # --- Alert level (colour-coded) ------------------------------------------
+    level_color = {
+        FarmAlertLevel.CRITICAL: "red",
+        FarmAlertLevel.HIGH: "red",
+        FarmAlertLevel.MODERATE: "yellow",
+        FarmAlertLevel.LOW: "yellow",
+        FarmAlertLevel.NEGATIVE: "green",
+    }
+    color = level_color[assessment.alert_level]
+    click.secho(
+        f"Alert level : {assessment.alert_level.value}  (score {assessment.alert_score}/100)",
+        fg=color,
+        bold=(assessment.alert_level in (FarmAlertLevel.CRITICAL, FarmAlertLevel.HIGH)),
+    )
+
+    if assessment.immediate_report_required:
+        click.secho(
+            "  IMMEDIATE REPORT REQUIRED: notify national veterinary authority.",
+            fg="red",
+            bold=True,
+        )
+        click.secho(
+            f"  Notifiable detection(s): {', '.join(assessment.notifiable_targets)}",
+            fg="red",
+        )
+
+    click.echo("")
+    click.echo("Interpretation:")
+    click.echo(f"  {assessment.interpretation}")
+    click.echo("")
+    click.echo("Recommended action:")
+    click.echo(f"  {assessment.recommended_action}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
 @cli.command(name="version")
 def version() -> None:
     """Print version and exit."""
