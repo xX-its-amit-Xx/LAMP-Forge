@@ -3189,3 +3189,273 @@ making it a highly specific M. haemolytica marker.  Standard DNA-LAMP.
   leukotoxin. *J Bacteriol* 171:1862-1872.
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 24 -- *Mycoplasma bovis* via *uvrC* (BRD supplemental 6th channel)
+
+**Goal.** Detect *Mycoplasma bovis* in nasal swab, bronchoalveolar lavage
+(BAL), or joint fluid from cattle and calves, adding a mycoplasmal sixth
+channel to the five-target BRD panel (Recipe 23) on a BioVind-style
+portable platform.
+
+**Why it's interesting.**  *Mycoplasma bovis* is the most pathogenic
+*Mycoplasma* in cattle and an increasingly urgent veterinary problem.
+It causes:
+
+- **Chronic fibrinous pneumonia** in feedlot calves (responsible for
+  30-50% of feedlot pneumonia cases that fail standard antimicrobial therapy)
+- **Middle-ear disease** (otitis media) in young calves, a leading
+  cause of calf mortality in dairy operations
+- **Septic arthritis** -- often poly-articular, refractory to treatment
+- **Sub-clinical and clinical mastitis** in dairy cattle
+
+The critical clinical distinction from the five BRD panel targets in
+Recipe 23 is therapeutic: *M. bovis* is intrinsically resistant to
+beta-lactams and aminoglycosides (it lacks a cell wall), and pan-resistant
+strains failing all frontline antimicrobials (enrofloxacin, tulathromycin,
+florfenicol) are now routinely isolated in North America and Europe.
+Detecting *M. bovis* specifically -- rather than assuming the causative agent
+is *M. haemolytica* -- allows a directed decision: isolate the animal,
+perform susceptibility testing before committing to therapy, and apply
+enhanced biosecurity.
+
+*M. bovis* is a **DNA target** (no reverse transcription required).
+Standard DNA-LAMP (Bst 2.0 at 60-65 degC) delivers a result in under
+30 minutes, fully compatible with a BioVind-style portable platform.
+
+**Target gene: *uvrC*.** The UvrC subunit of the nucleotide excision repair
+complex (excinuclease ABC) is the published LAMP target of choice for *M. bovis*
+(Chen et al. 2017, *J Vet Sci*).  It is:
+
+- Present as a single copy in all *M. bovis* genomes sequenced to date
+- Sequence-divergent from its orthologues in bovine respiratory *Mycoplasma* spp.
+  sharing the same niche (*M. bovirhinis*, *M. dispar*, *M. bovoculi*)
+- Under strong purifying selection at the ATP-binding and HhH-GPD domains,
+  yielding at least two LAMP-accessible conserved windows in the ~1.8 kb CDS
+- LOD_95 of 10 copies per reaction demonstrated on extracted DNA in the
+  original Chen et al. 2017 validation
+
+**The GC-content challenge.**  *M. bovis* has one of the lowest genomic GC
+contents of any livestock pathogen: **~29.5%** (compare *S. pyogenes* ~38.5%,
+*C. difficile* ~28.6%).  The standard LAMP-Forge `gc_min` of 40% would yield
+zero primer candidates for this organism.  The config below drops `gc_min` to
+25% -- the single most important parameter deviation from standard configs.
+If the run returns zero primer sets, lower `gc_min` further to 20% and re-run.
+
+**Config.** Use the ready-made config at `config/mbovis_uvrC.yaml`, or paste
+the block below:
+
+```yaml
+target:
+  name: mbovis_uvrC
+  taxon_id: 28903          # Mycoplasma bovis (NCBI TaxID)
+  accessions: []           # extend with PG45, HB0801, NP151, Ningxia-1 strains
+  gene: uvrC               # DNA repair subunit C; alt annotation: "uvrC protein"
+  max_sequences: 25        # spans key M. bovis field strains
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- ruminant Mycoplasma spp. share conserved blocks
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.20        # uvrC is conserved within M. bovis (>97% inter-strain)
+  min_region_length: 200
+
+primer:
+  tm_min: 60.0                   # DNA target -- standard LAMP; NOT RT-LAMP
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 25.0                   # M. bovis genomic GC ~29.5%; CRITICAL deviation from default
+  gc_max: 47.0                   # cap below GC-richer ruminant Mycoplasma off-targets
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/mbovis_uvrC
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config notes.**
+
+- `gc_min: 25.0` -- The most critical departure from standard configs.  Every
+  other LAMP-Forge config uses `gc_min >= 25-35`; the default is 40%.
+  *M. bovis* at ~29.5% GC requires primers in the 25-35% GC range to hit the
+  conserved catalytic-domain blocks of uvrC.  Without this adjustment the run
+  will fail with zero primer candidates.
+- `gc_max: 47.0` -- Deliberately lower than the 65% default.  Most bovine
+  respiratory *Mycoplasma* off-targets have slightly higher GC than *M. bovis*
+  (*M. agalactiae* ~33%, *M. bovirhinis* ~31%); capping at 47% reduces the
+  risk of cross-reactive primers binding these species at the GC-rich end.
+- `entropy_threshold: 0.20` -- *uvrC* is under strong functional constraint
+  within *M. bovis*; within-species identity > 97%.  This is the same tight
+  threshold used for single-species housekeeping genes (*rpoB* at 0.20,
+  *speB* at 0.20, *lktA* at 0.20).
+- `min_identity_threshold: 0.85` -- Tighter than the 0.80 bacterial default.
+  *Mycoplasma agalactiae* shares > 80% 16S identity with *M. bovis*; the
+  0.85 threshold is required to surface any residual uvrC cross-reactive
+  primer candidates before wet-lab validation.
+- `tm_min: 60.0` -- *M. bovis* uvrC is a chromosomal DNA target; do **not**
+  raise to the RT-LAMP 63 degC floor used for BRSV, BCoV, and BVDV in
+  Recipe 23.
+
+**Off-target panel.**  The critical differentials are bovine respiratory
+*Mycoplasma* species and common BRD bacterial co-pathogens:
+
+| File | Source | Why |
+|---|---|---|
+| `mycoplasma_bovirhinis.fasta` | NCBI TaxID 28901 representative | Bovine respiratory commensal Mycoplasma; healthy-cattle coloniser; must not co-flag |
+| `mycoplasma_dispar.fasta` | NCBI TaxID 29556 representative | Mild-calf-pneumonia Mycoplasma; shared niche with M. bovis |
+| `mycoplasma_agalactiae.fasta` | PG2 RefSeq (NC_009497.1) | Closest relative (>80% 16S identity); goat/sheep agalactia; must not flag in cattle panel |
+| `pasteurella_multocida.fasta` | ATCC 43137 RefSeq | Most common BRD bacterial co-pathogen after M. haemolytica; must not cross-flag |
+| `bos_taurus_fragment.fasta` | ARS-UCD2.0 chr1 subset | Host DNA from nasal swab or BAL; dominant background nucleic acid |
+
+**Expected output.**  The *uvrC* CDS (~1.8 kb) should yield 1-3 conserved
+windows.  Top-scoring sets should have zero flagged hits against all
+off-targets at the 0.85 x 0.85 threshold.  If fewer than two conserved
+windows appear, check that the sequence retrieval captured strains from
+both the North American (HB0801, NP151) and European (PG45, Ningxia-1)
+lineages, which have some inter-lineage synonymous divergence.
+
+**Run.**
+
+```bash
+docker compose run --rm lamp-forge run --config /work/config/mbovis_uvrC.yaml
+```
+
+**Estimate LOD before ordering** (nasal swab in 500 uL PBS, 50% DNA
+extraction, 50 uL eluate, 5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 500 \
+  --efficiency 0.50 \
+  --eluate-volume 50 \
+  --reaction-input 5
+```
+
+Effective sample = 500 x 0.5 x (5/50) = 25 uL per reaction ->
+LOD_95 approx 120 copies/mL.  In clinically active *M. bovis* pneumonia
+nasal secretions contain 10^4-10^6 genomic equivalents/mL, providing
+two or more orders-of-magnitude headroom.
+
+**Check TTP for the 60-min BioVind BioID device window.**
+
+```bash
+lamp-forge ttp --preset dna-lamp --device-window 60
+```
+
+At 100 copies/reaction (approx LOD_95 for a 25 uL effective sample) the
+predicted DNA-LAMP TTP is ~43 min -- well inside the 60-min BioVind
+BioID device window.
+
+**Export primers for ordering.**
+
+```bash
+lamp-forge export \
+  --input results/mbovis_uvrC/primer_sets.json \
+  --format idt \
+  --target-label MBovis_uvrC \
+  --out orders/mbovis_uvrC_idt_order.csv
+```
+
+**Verify config before running.**
+
+```bash
+lamp-forge validate \
+  --config config/mbovis_uvrC.yaml \
+  --no-check-dirs
+```
+
+**Add M. bovis to the six-channel BRD panel.**
+
+After designing all six BRD targets independently (see Recipe 23 for the
+five-target panel), add the M. bovis channel:
+
+```bash
+lamp-forge panel \
+  --set BRSV=results/brsv_N_gene/primer_sets.json \
+  --set BCOV=results/bcov_N_gene/primer_sets.json \
+  --set BVDV=results/bvdv_5utr/primer_sets.json \
+  --set IBR=results/ibr_gB/primer_sets.json \
+  --set MHAE=results/mhae_lktA/primer_sets.json \
+  --set MBOVIS=results/mbovis_uvrC/primer_sets.json \
+  --top-per-target 5 \
+  --dimer-dg-threshold -5.0 \
+  --out results/brd_6plex_panel
+```
+
+Generate the pooling sheet (six targets = 264 uM minimum; request 300 uM
+resuspension from IDT or Twist):
+
+```bash
+lamp-forge pool \
+  --panel results/brd_6plex_panel/panel.json \
+  --stock-conc 300 \
+  --total-volume 500 \
+  --out results/brd_6plex_panel/pool_sheet.csv
+```
+
+Export all 36 primers in one IDT order sheet:
+
+```bash
+lamp-forge panel-export \
+  --panel results/brd_6plex_panel/panel.json \
+  --format idt \
+  --out orders/brd_6plex_idt_order.csv
+```
+
+**Six-channel BRD result interpretation.**
+
+| BRSV | BCoV | BVDV | IBR | MHAE | MBOVIS | Interpretation |
+|---|---|---|---|---|---|---|
+| + | - | - | - | + | - | Viral-bacterial co-infection; BRSV + M. haemolytica -- CRITICAL; initiate antimicrobials immediately |
+| - | - | - | - | - | + | M. bovis alone; withhold standard BRD antimicrobials; susceptibility test before treating |
+| + | - | - | - | + | + | BRSV + MHAE + MBOVIS; highest-complexity BRD; dual antimicrobial therapy required |
+| - | - | + | - | - | - | BVDV alone; screen herd for PI (persistently infected) animals; movement restriction |
+| - | - | - | - | - | - | All negative; consider extraction failure (include 16S control -- Recipe 19) |
+
+A *M. bovis*-positive result in the absence of *M. haemolytica* is a red flag
+for a pan-resistant strain.  Do not apply standard metaphylaxis or treatment
+protocols without susceptibility data.
+
+**Wet-lab notes.**
+
+- M. bovis is fastidious and slow-growing; culture sensitivity is only
+  ~40-60%.  LAMP sensitivity is substantially higher for direct clinical
+  samples.
+- For nasal swabs, collect both nasal swabs and a deep tracheal aspirate
+  where possible -- M. bovis load in nasal secretions can be lower than
+  in bronchoalveolar lavage in chronic pneumonia cases.
+- For joint fluid, the DNA extraction requires an additional bead-beating
+  step to lyse the organisms in the synovial matrix; standard boiling
+  protocols have reduced efficiency for this matrix.
+- Include a 16S rRNA internal control (Recipe 19) to confirm extraction
+  success; M. bovis-negative / 16S-negative results indicate inhibition
+  or extraction failure, not a clean sample.
+- A positive result should be followed by culture and susceptibility testing
+  at an accredited laboratory before initiating or modifying antimicrobial
+  therapy.
+
+**References.**
+
+- Chen SQ, Zhang W, Chen ZL et al. (2017). Development of a loop-mediated
+  isothermal amplification assay for rapid detection of *Mycoplasma bovis*.
+  *J Vet Sci* 18(3):397-403. doi:10.4142/jvs.2017.18.3.397
+- Hobbs JK-R, Bowen JM, Lord CC & Angen O (2018). Whole-genome sequencing
+  and comparative genomics of *Mycoplasma bovis*. *Vet Microbiol* 220:18-25.
+  doi:10.1016/j.vetmic.2018.04.029
+- Caswell JL & Archambault M (2007). Mycoplasma bovis pneumonia in cattle.
+  *Anim Health Res Rev* 8:161-186. doi:10.1017/S1466252307001351
+- Gautier-Bouchardon AV (2018). Antimicrobial resistance in Mycoplasma spp.
+  *Microbiol Spectr* 6(4):ARBA-0030-2018. doi:10.1128/microbiolspec.ARBA-0030-2018
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

@@ -1,0 +1,148 @@
+# LAMP-Forge config: Mycoplasma bovis uvrC LAMP (BRD supplemental 6th channel)
+# ============================================================================
+# Target: Mycoplasma bovis (uvrC DNA repair gene) -- the leading mycoplasmal
+#         cause of bovine respiratory disease, mastitis, and arthritis.
+#
+# Why this target:
+#   Mycoplasma bovis is the most pathogenic Mycoplasma in cattle and a growing
+#   veterinary concern due to the emergence of pan-resistant strains that fail
+#   all antimicrobial therapy.  It is responsible for:
+#     - Chronic pneumonia in feedlot calves (30-50% of feedlot pneumonia cases)
+#     - Middle-ear disease (otitis media) in young calves
+#     - Septic arthritis
+#     - Mastitis in dairy cattle (sub-clinical and clinical)
+#   Early pen-side detection on a BioVind-style portable platform allows
+#   quarantine decisions before M. bovis spreads through a feedlot or dairy --
+#   especially important given the absence of effective antimicrobial options
+#   for pan-resistant strains.
+#
+#   M. bovis is a chromosomal DNA target -- no reverse transcription is needed.
+#   Standard DNA-LAMP (Bst 2.0 at 60-65 degC) gives a result in under 30 min,
+#   fully compatible with a BioVind-style portable platform.
+#
+# uvrC rationale:
+#   The uvrC gene encodes the C subunit of the UvrABC nucleotide excision
+#   repair complex (excinuclease ABC).  It is:
+#     - Present as a single copy in all Mycoplasma bovis genomes sequenced to date
+#     - Sequence-divergent from its orthologues in the bovine respiratory
+#       Mycoplasma species that share the same niche (M. bovirhinis, M. dispar,
+#       M. bovoculi), enabling species-level specificity
+#     - Under strong purifying selection at the ATP-binding and DNA-binding
+#       domains, yielding conserved primer windows across diverse M. bovis strains
+#       (Hobbs JK-R et al. 2018; NP151, Ningxia-1, HB0801 reference strains)
+#     - The basis of a published M. bovis LAMP assay demonstrating LOD_95 of
+#       10 copies per reaction on extracted DNA (Chen et al. 2017, J Vet Sci)
+#
+#   The ~1.8 kb uvrC CDS in M. bovis PG45 (NCBI TaxID 28903, reference strain)
+#   contains at least two LAMP-accessible conserved windows at the N-terminal
+#   UvrC N-domain and the C-terminal HhH-GPD domain.
+#
+# GC content note:
+#   Mycoplasma bovis has one of the lowest genomic GC contents of any
+#   livestock pathogen: ~29.5-29.7% (vs Streptococcus pyogenes ~38.5% and
+#   Clostridioides difficile ~28.6%).  This critically constrains primer design:
+#     - gc_min must be well below the standard 40% (set to 25% here)
+#     - gc_max capped at 47% to avoid primers that preferentially bind
+#       the GC-richer bovine respiratory Mycoplasma off-targets
+#   This GC challenge is the main design risk for this assay -- the pipeline
+#   may report fewer primer candidates than for higher-GC targets.  If zero
+#   sets are returned, lower gc_min to 20.0 and re-run.
+#
+# BRD panel integration:
+#   M. bovis adds a mycoplasmal sixth channel to the standard five-target BRD
+#   panel (BRSV, BCoV, BVDV, IBR, MHAE -- see Recipe 23).  After designing all
+#   six targets independently:
+#     lamp-forge panel \
+#       --set BRSV=results/brsv_N_gene/primer_sets.json \
+#       --set BCOV=results/bcov_N_gene/primer_sets.json \
+#       --set BVDV=results/bvdv_5utr/primer_sets.json \
+#       --set IBR=results/ibr_gB/primer_sets.json \
+#       --set MHAE=results/mhae_lktA/primer_sets.json \
+#       --set MBOVIS=results/mbovis_uvrC/primer_sets.json \
+#       --top-per-target 5 \
+#       --out results/brd_6plex_panel
+#
+#   The MBOVIS channel detects a pathogen that is not suppressed by most
+#   frontline BRD antimicrobials (enrofloxacin, tulathromycin) -- a positive
+#   MBOVIS signal in a MHAE-negative animal should redirect therapy toward
+#   tetracyclines or macrolides where susceptibility data are available.
+#
+# Key parameter notes:
+#   - tm_min: 60.0 -- DNA target; standard LAMP floor.
+#     Do NOT raise to the RT-LAMP 63 degC floor used for BRSV / BVDV / BCoV.
+#   - gc_min: 25.0 -- essential for this extremely AT-rich organism (genomic
+#     GC ~29.5%).  Primers with GC 25-35% will be found in the uvrC catalytic
+#     domain blocks.
+#   - gc_max: 47.0 -- deliberately lower than the 65% default; caps primers
+#     below the ~35-45% GC range of the bovine respiratory Mycoplasma off-targets.
+#   - conservation.entropy_threshold: 0.20 -- uvrC is under strong functional
+#     constraint within M. bovis; within-species identity > 97% across sequenced
+#     strains (PG45, HB0801, NP151, Ningxia-1, 08M).
+#   - min_identity_threshold: 0.85 -- tight; ruminant Mycoplasma share some
+#     functional-gene blocks; the 0.85 threshold surfaces any residual cross-
+#     reactive candidates before ordering.
+#
+# References:
+#   Chen SQ, Zhang W, Chen ZL et al. (2017) Development of a loop-mediated
+#   isothermal amplification assay for rapid detection of Mycoplasma bovis.
+#   J Vet Sci 18(3):397-403. doi:10.4142/jvs.2017.18.3.397
+#   Hobbs JK-R, Bowen JM, Lord CC & Angen O (2018) Whole-genome sequencing
+#   and comparative genomics of Mycoplasma bovis. Vet Microbiol 220:18-25.
+#   doi:10.1016/j.vetmic.2018.04.029
+#   Caswell JL & Archambault M (2007) Mycoplasma bovis pneumonia in cattle.
+#   Anim Health Res Rev 8:161-186. doi:10.1017/S1466252307001351
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63. doi:10.1093/nar/28.12.e63
+# ============================================================================
+
+target:
+  name: mbovis_uvrC
+  taxon_id: 28903                # Mycoplasma bovis (NCBI TaxID)
+  accessions: []                 # taxon-driven fetch; add specific strain accessions
+                                  # (PG45, HB0801, NP151, Ningxia-1) for broader coverage
+  gene: uvrC                     # DNA repair subunit C; alt NCBI annotation: "uvrC protein"
+  max_sequences: 25              # M. bovis uvrC is well-conserved; 25 spans key field strains
+  email: you@your-inst.edu      # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Critical differentials within bovine respiratory Mycoplasma species and
+  # common BRD co-pathogens:
+  #
+  #   mycoplasma_bovirhinis.fasta  - common bovine respiratory Mycoplasma;
+  #                                  colonises healthy cattle; must not co-flag
+  #   mycoplasma_dispar.fasta      - bovine respiratory Mycoplasma; associated
+  #                                  with mild calf pneumonia; no significant
+  #                                  pathogenicity
+  #   mycoplasma_agalactiae.fasta  - closest relative (>80% 16S identity);
+  #                                  causes contagious agalactia in small ruminants
+  #                                  but is not a bovine respiratory pathogen
+  #   pasteurella_multocida.fasta  - most common BRD co-pathogen after M. haemolytica;
+  #                                  must not cross-flag in the M. bovis channel
+  #   bos_taurus_fragment.fasta    - ARS-UCD2.0 chr1 subset; dominant background
+  #                                  nucleic acid in nasal swab or BAL samples
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # tight -- ruminant Mycoplasma spp. share conserved blocks
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 30               # standard window for a single-species bacterial target
+  entropy_threshold: 0.20       # uvrC is well-conserved within M. bovis; tight is correct
+  min_region_length: 200        # uvrC CDS is ~1800 nt; 200 bp regions expected
+
+primer:
+  tm_min: 60.0                  # DNA target -- standard LAMP Tm floor; NOT RT-LAMP
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 25.0                  # M. bovis genomic GC ~29.5%; MUST be well below 40%
+  gc_max: 47.0                  # cap below GC-richer Mycoplasma off-targets
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/mbovis_uvrC
+  top_n: 10
+  generate_html: true
+  generate_csv: true
