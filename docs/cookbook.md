@@ -3459,3 +3459,145 @@ protocols without susceptibility data.
   *Microbiol Spectr* 6(4):ARBA-0030-2018. doi:10.1128/microbiolspec.ARBA-0030-2018
 - Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 25 -- Souring trajectory analysis for time-series oilfield MIC monitoring (`lamp-forge souring-trend`)
+
+**Goal.** Convert a sequence of monthly oilfield MIC LAMP panel results
+(from `lamp-forge mic-risk`) into a **souring trajectory assessment** --
+IMPROVING, STABLE_LOW, STABLE_HIGH, or DETERIORATING -- together with key
+inflection-point flags (SRB newly detected, SRB clearing) and a treatment
+effectiveness audit.
+
+**Why it's interesting.** A single LAMP panel reading tells you *what is
+present now*.  The trend across consecutive readings tells you *whether the
+situation is getting better or worse*, which is the decision variable that
+drives treatment escalation, biocide dose adjustment, and regulatory
+reporting.  A portable BioVind BioID deployed on a produced-water manifold
+generates one result per monitoring interval; without trend context, each
+result is interpreted in isolation, missing the forest for the trees.
+
+Key operational decisions that depend on trend:
+
+- **First SRB detection after consecutive negatives** (newly detected):
+  requires immediate biocide treatment -- waiting for the next interval
+  risks the SRB community becoming established.
+- **SRB + NRB co-detected repeatedly** (treatment under-dose): nitrate
+  injection is active but not achieving thermodynamic suppression of
+  sulfate-reduction; dose must be increased.
+- **SRB returning to negative** (clearing): confirms treatment effectiveness
+  and justifies maintaining the current programme rather than escalating.
+- **Chronic SRB positivity without a downward trend** (STABLE_HIGH): current
+  programme is failing; a treatment review is overdue.
+
+**Workflow -- from individual panel runs to trend report.**
+
+Step 1: Run the LAMP panel at each monitoring interval and save the JSON.
+
+```bash
+# Month 1 -- SRB detected in produced water from well W1-A
+lamp-forge mic-risk --srb \
+  --out-json results/W1-A/2026-01.json
+
+# Month 2 -- SRB + IRB co-detected
+lamp-forge mic-risk --srb --irb \
+  --out-json results/W1-A/2026-02.json
+
+# Month 3 -- biocide applied; SRB still present with IRB
+lamp-forge mic-risk --srb --irb \
+  --out-json results/W1-A/2026-03.json
+
+# Month 4 -- dose increased; NRB now detectable (nitrate injection active)
+lamp-forge mic-risk --srb --irb --nrb \
+  --out-json results/W1-A/2026-04.json
+
+# Month 5 -- SRB cleared; NRB dominant
+lamp-forge mic-risk --nrb \
+  --out-json results/W1-A/2026-05.json
+```
+
+Step 2: Analyse the five-month trend.
+
+```bash
+lamp-forge souring-trend \
+  --mic-result results/W1-A/2026-01.json \
+  --mic-result results/W1-A/2026-02.json \
+  --mic-result results/W1-A/2026-03.json \
+  --mic-result results/W1-A/2026-04.json \
+  --mic-result results/W1-A/2026-05.json \
+  --out-json  results/W1-A/trend_2026_H1.json \
+  --out-csv   results/W1-A/trend_2026_H1.csv
+```
+
+**Workflow -- from a monitoring spreadsheet CSV.**
+
+If results are tracked in a spreadsheet, export a CSV with the required columns:
+
+```
+# monitoring/W1-A_2026.csv
+sample_id,date,srb,mcr,irb,apb,nrb
+2026-01,2026-01-15,1,0,0,0,0
+2026-02,2026-02-15,1,0,1,0,0
+2026-03,2026-03-15,1,0,1,0,0
+2026-04,2026-04-15,1,0,1,0,1
+2026-05,2026-05-15,0,0,0,0,1
+```
+
+```bash
+lamp-forge souring-trend \
+  --csv monitoring/W1-A_2026.csv \
+  --out-json results/W1-A/trend_2026_H1.json
+```
+
+Boolean columns accept `0`/`1` or `true`/`false` (case-insensitive).
+The `date` column is optional.
+
+**Trend direction logic.**
+
+| Pattern | Direction |
+|---|---|
+| SRB positive only in the most recent sample | DETERIORATING (onset event) |
+| SRB rate rising between first half and second half of the time series | DETERIORATING |
+| SRB positive in first sample, negative in most recent sample | IMPROVING (clearing event) |
+| SRB rate falling, most recent sample negative | IMPROVING |
+| SRB detected in >= 50% of intervals, no clear downward trend | STABLE_HIGH |
+| SRB detected in < 50% of intervals, no clear trend | STABLE_LOW |
+| Fewer than 2 samples available | INSUFFICIENT_DATA |
+
+**Treatment effectiveness flags.**
+
+| Flag | Condition | Operational meaning |
+|---|---|---|
+| `srb_newly_detected` | SRB positive only in the last sample | Souring onset; immediate biocide required |
+| `srb_clearing` | SRB positive in first sample, negative in last | Treatment effective; maintain current programme |
+| `treatment_underdosed_count > 0` | SRB + NRB both positive in N intervals | Nitrate injection present but under-dosed |
+| NRB positive, SRB consistently negative | NRB detectable, no SRB | Nitrate suppression effective; continue programme |
+
+**Multi-well campaign.**
+
+Run `souring-trend` once per well and aggregate the direction flags in a management
+dashboard.  Wells showing DETERIORATING should be prioritised for immediate
+treatment; STABLE_HIGH wells require programme review; IMPROVING and STABLE_LOW
+wells can remain on the standard monitoring schedule.
+
+```bash
+for well in W1-A W1-B W2-A W2-B; do
+  lamp-forge souring-trend \
+    --csv monitoring/${well}_2026.csv \
+    --out-json results/${well}/trend_2026.json
+done
+```
+
+**References.**
+
+- Hubert C & Voordouw G (2007). Oil field souring control by nitrate-reducing
+  bacteria. *Appl Environ Microbiol* 73:2644-2652.
+  doi:10.1128/AEM.02751-06
+- Hamilton WA (2003). Microbially influenced corrosion as a model system for
+  the study of metal microbe interactions. *Int Biodeterior Biodegrad*
+  51(3):151-155. doi:10.1016/S0964-8305(02)00089-6
+- Vigneron A et al. (2017). Comammox Nitrospira in oilfield MIC microbiomes.
+  *ISME J* 11:2180-2194. doi:10.1038/ismej.2017.40
+- Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
