@@ -1,0 +1,111 @@
+# LAMP-Forge config: BVDV 5'-UTR RT-LAMP (bovine respiratory/reproductive panel)
+# ============================================================================
+# Target: Bovine viral diarrhea virus (BVDV) -- pan-genotype detection via the
+#         5'-untranslated region (5'-UTR), the canonical BVDV molecular marker.
+#
+# Why this target:
+#   BVDV (Pestivirus bovis; Family Flaviviridae) is the most immunosuppressive
+#   bovine pathogen: persistently infected (PI) calves shed >10^11 viral particles
+#   per day for their entire lives and are the primary reservoir for herd spread.
+#   BVDV causes: (1) acute mucosal disease, (2) fetal infection and PI animals,
+#   (3) profound immunosuppression that potentiates BRSV, BCoV, Mannheimia,
+#   and other BRD pathogens.  Many countries mandate PI-animal testing (EU, UK,
+#   Scandinavia, Australia) as part of national eradication programmes.
+#
+#   BVDV is a positive-sense ssRNA virus; detection requires RT-LAMP.  One-step
+#   RT-LAMP (Bst 2.0 WarmStart + NEB RTx) at 63-65 degC is compatible with
+#   BioVind-style portable platforms.
+#
+# Genotype diversity:
+#   BVDV comprises two genetically distinct species:
+#     - BVDV type 1 (BVDV-1; Pestivirus A): ~29 subtypes (1a-1u+); NCBI TaxID 11099
+#     - BVDV type 2 (BVDV-2; Pestivirus B): 3 subtypes (2a-2c); NCBI TaxID 97012
+#   Types 1 and 2 share ~75-80% nucleotide identity in the 5'-UTR.  Type 2 is
+#   associated with more severe hemorrhagic syndrome (particularly in North America
+#   and Japan).  A pan-BVDV assay must include both types: supply BVDV-2
+#   accessions in the accessions block below.
+#
+# 5'-UTR rationale:
+#   The 5'-untranslated region (~385 nt) is the most conserved genomic region
+#   across all BVDV types and subtypes and the target of all standard BVDV
+#   molecular assays (Baker 1995 RT-PCR, OIE manual RT-PCR primer pairs).  Its
+#   IRES (internal ribosome entry site) structure places strong evolutionary
+#   constraint on the sequence -- providing an ideal LAMP primer anchor.
+#
+# Because the 5'-UTR is a non-coding intergenic region, gene: null is set and
+# the pipeline fetches complete or near-complete genome sequences (taxon- and
+# accession-driven).  Conservation analysis then identifies the conserved 5'-UTR
+# block automatically.
+#
+# RT-LAMP readiness:
+#   After design, validate Tm suitability for one-step RT-LAMP:
+#     lamp-forge rt-check --input results/bvdv_5utr/primer_sets.json --na-type rna
+#
+# Key parameter notes:
+#   - tm_min: 63.0 -- one-step RT-LAMP co-activity floor.
+#   - conservation.entropy_threshold: 0.30 -- BVDV-1/2 share ~75-80% 5'-UTR
+#     identity; 0.30 bits exploits the conserved IRES blocks while accommodating
+#     inter-type divergence.
+#   - gc_min/gc_max: 35-60% -- BVDV 5'-UTR is ~45-50% GC.
+#   - min_identity_threshold: 0.85 -- flags CSFV (classical swine fever virus),
+#     the closest pestivirus relative (~75% 5'-UTR identity); review heatmap.
+#
+# References:
+#   Baker JC (1995) The clinical manifestations of bovine viral diarrhea
+#   infection. Vet Clin North Am Food Anim Pract 11:425-445.
+#   OIE (2021) Bovine viral diarrhoea. In: Terrestrial Manual, Chapter 3.4.7.
+#   Ridpath JF (2010) Bovine viral diarrhea virus: global status. Vet Clin
+#   North Am Food Anim Pract 26:105-121. doi:10.1016/j.cvfa.2009.10.007
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63. doi:10.1093/nar/28.12.e63
+# ============================================================================
+
+target:
+  name: bvdv_5utr
+  taxon_id: 11099                # BVDV type 1 (Pestivirus A); anchor taxon for BVDV-1
+  accessions:
+    # BVDV type 2 (Pestivirus B) accessions for pan-BVDV coverage.
+    # REQUIRED: add BVDV-2 complete genome accessions from NCBI before running.
+    # BVDV-2 NCBI TaxID: 97012; search "Pestivirus B"[Organism] AND complete[Title]
+    # Example strains: 890 (prototype BVDV-2a), New York-1, C413, WI-1
+    []
+  gene: null                     # 5'-UTR is non-coding; fetch whole genomes and let
+                                  # conservation analysis identify the conserved UTR block
+  max_sequences: 35              # span BVDV-1 subtypes (1a-1n+ are common) + type 2
+  email: you@your-inst.edu      # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Pestiviruses are the key off-target risk -- CSFV shares ~75% 5'-UTR identity.
+  #
+  #   csfv.fasta         - classical swine fever virus (Pestivirus C); ~75% 5'-UTR identity;
+  #                        most important off-target for a bovine BVDV assay
+  #   border_disease.fasta - border disease virus (BDV; Pestivirus D); sheep pestivirus;
+  #                         ~70-75% 5'-UTR identity to BVDV-1
+  #   brsv.fasta         - include if designing the full BRD panel; different family
+  #   bos_taurus_fragment.fasta - ARS-UCD2.0 chr1 subset; host DNA from blood or swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # flag CSFV hits (~75%); raise to 0.90 if CSFV cross-reactivity
+  min_coverage_threshold: 0.85  # is unacceptable in the deployment context
+
+conservation:
+  window_size: 25               # RNA virus + short target region; short window
+  entropy_threshold: 0.30       # BVDV-1/2 5'-UTR share ~75-80% identity; mid-range threshold
+  min_region_length: 200        # 5'-UTR is ~385 nt; expect 1-2 conserved windows
+
+primer:
+  tm_min: 63.0                  # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                  # BVDV 5'-UTR ~45-50% GC; allow lower for type-2 diversity
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/bvdv_5utr
+  top_n: 10
+  generate_html: true
+  generate_csv: true

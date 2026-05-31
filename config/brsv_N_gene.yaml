@@ -1,0 +1,134 @@
+# LAMP-Forge config: BRSV N gene RT-LAMP (bovine respiratory disease panel)
+# ============================================================================
+# Target: Bovine respiratory syncytial virus (BRSV) -- broad-spectrum detection
+#         via the N gene (nucleoprotein), the canonical BRSV molecular marker.
+#
+# Why this target:
+#   BRSV is the leading viral trigger of bovine respiratory disease (BRD),
+#   the most economically damaging health problem in beef and dairy cattle
+#   worldwide.  Estimated annual losses in North America exceed USD 900 million
+#   (USDA-NAHMS feedlot studies 2011-2021).  BRSV infects the respiratory
+#   epithelium, suppressing mucociliary clearance and predisposing the animal
+#   to secondary bacterial infection -- most critically Mannheimia haemolytica
+#   (lktA, config/mhae_lktA.yaml).  BRSV + Mannheimia co-infection is the
+#   highest-mortality pattern in BRD and is the primary driver of mass
+#   antimicrobial use in feedlots.
+#
+#   BRSV belongs to genus Orthopneumovirus (Family Pneumoviridae), negative-
+#   sense ssRNA.  Detection requires **RT-LAMP**.  One-step RT-LAMP (Bst 2.0
+#   WarmStart + NEB RTx) at 63-65 degC delivers a result in under 30 minutes,
+#   compatible with BioVind-style portable platforms at the feedlot, sale barn,
+#   or veterinary clinic.
+#
+# Genotype diversity:
+#   BRSV has two major subgroups (A and B) sharing ~80-85% N-gene nucleotide
+#   identity.  A pan-BRSV assay must include sequences from both subgroups.
+#   Start from the representative strains listed in the accessions block below
+#   and supplement with recent field isolates from NCBI GenBank.
+#
+# N gene rationale:
+#   The N gene (~1135 nt CDS, encoding the 391 aa nucleocapsid protein) is the
+#   most abundantly expressed BRSV mRNA, the basis of most published BRSV
+#   RT-PCR assays (Valarcher et al. 1999; Vilcek et al. 1994), and the
+#   most conserved coding sequence across subgroups A and B.  Primers designed
+#   against the N gene are also available for sequence-based strain typing --
+#   an additional benefit if on-farm sample bank sequences are obtained.
+#
+# RT-LAMP readiness:
+#   After design, validate Tm suitability for one-step RT-LAMP:
+#     lamp-forge rt-check --input results/brsv_N_gene/primer_sets.json --na-type rna
+#
+# BRD panel:
+#   BRSV is the first channel in the bovine respiratory disease (BRD) panel
+#   (see docs/cookbook.md Recipe 23).  Run panel screening after designing all
+#   five BRD targets independently:
+#     lamp-forge panel \
+#       --set BRSV=results/brsv_N_gene/primer_sets.json \
+#       --set BCOV=results/bcov_N_gene/primer_sets.json \
+#       --set BVDV=results/bvdv_5utr/primer_sets.json \
+#       --set IBR=results/ibr_gB/primer_sets.json \
+#       --set MHAE=results/mhae_lktA/primer_sets.json \
+#       --top-per-target 5 \
+#       --out results/brd_5plex_panel
+#
+# Risk assessment:
+#   After interpreting panel results, run the BRD risk command:
+#     lamp-forge bov-risk --brsv [--bcov] [--bvdv] [--ibr] [--mhae]
+#
+# Key parameter notes:
+#   - tm_min: 63.0 -- one-step RT-LAMP co-activity floor; same as PRRSV (Recipe 11),
+#     AIV (Recipe 12), and FMDV (Recipe 14).
+#   - conservation.entropy_threshold: 0.35 -- BRSV subgroups A and B share
+#     ~80-85% N-gene nt identity; a threshold of 0.35 bits exploits the conserved
+#     central domain while accommodating subgroup-level drift.
+#   - gc_min/gc_max: 35-60% -- BRSV N gene is ~42-46% GC; the wider window
+#     (25 GC units) ensures primer candidates are found across both subgroups.
+#   - min_identity_threshold: 0.85 -- tight; HRSV-A/B (human RSV) share ~50-60%
+#     nt identity with BRSV and must not co-flag.
+#
+# References:
+#   Valarcher JF, Schelcher F & Bourhy H (1999) Evolution of bovine respiratory
+#   syncytial virus. J Virol 74:10714-10728. doi:10.1128/JVI.74.22.10714-10728.2000
+#   Vilcek S, Elvander M, Ballagi-Pordany A & Belak S (1994) Development of
+#   nested PCR assays for detection of bovine respiratory syncytial virus in
+#   clinical samples. J Clin Microbiol 32:2225-2231.
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63. doi:10.1093/nar/28.12.e63
+# ============================================================================
+
+target:
+  name: brsv_N_gene
+  taxon_id: null                 # accessions-driven (see below); avoids subgroup taxon
+                                  # ambiguity between BRSV subgroups A and B in NCBI
+  accessions:
+    # Representative BRSV strains spanning subgroups A and B.
+    # REQUIRED: verify these accessions from NCBI GenBank before running --
+    # the sequences below are representative starting points; expand to >= 20
+    # strains covering recent field isolates (post-2010) for robust conservation.
+    #
+    # NCBI search: "Bovine respiratory syncytial virus"[Organism] AND N[Gene]
+    # Subgroup A: search for strains 375, A51908, 18537-4
+    # Subgroup B: search for strains B, WBR2, 9320, B-Snook
+    - "AF092942"   # BRSV subgroup A complete genome (strain A2; N gene CDS within)
+    - "Z37513"     # BRSV subgroup A N gene (Lelystad reference)
+    - "Z37516"     # BRSV subgroup B N gene (Lelystad reference)
+    - "AY911124"   # BRSV subgroup A isolate N gene (contemporary field)
+    # Add >= 15 additional subgroup A and B accessions here before production use.
+  gene: N                        # nucleoprotein N; alt NCBI annotation: "nucleocapsid protein"
+  max_sequences: 30              # span subgroups A + B and geographic diversity
+  email: you@your-inst.edu      # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Critical differentials for a bovine respiratory swab or bronchoalveolar lavage:
+  #   hrsv_a.fasta    - Human RSV subgroup A; ~50-60% N-gene nt identity; must not co-flag
+  #   hrsv_b.fasta    - Human RSV subgroup B; closest human RSV; lab contaminant risk
+  #   bovine_metapneumovirus.fasta - NC_006625.1; bovine metapneumovirus (Metapneumovirus genus);
+  #                    same Pneumoviridae family; primary clinical confounder for BRSV
+  #   bpi3.fasta      - Bovine parainfluenza virus 3 (Respirovirus); co-circulates in BRD
+  #   bos_taurus_fragment.fasta - ARS-UCD2.0 chr1 subset; host DNA from respiratory swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # tight -- Pneumoviridae family shares conserved domains
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25               # RNA virus: shorter window catches constrained blocks
+  entropy_threshold: 0.35       # BRSV A/B share ~80-85% N-gene identity; looser for subgroup diversity
+  min_region_length: 200        # N CDS is ~1135 nt -- expect 2-4 conserved windows
+
+primer:
+  tm_min: 63.0                  # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                  # BRSV N gene ~42-46% GC; wider window for subgroup diversity
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/brsv_N_gene
+  top_n: 10
+  generate_html: true
+  generate_csv: true

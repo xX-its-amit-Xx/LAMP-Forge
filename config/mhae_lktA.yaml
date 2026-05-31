@@ -1,0 +1,115 @@
+# LAMP-Forge config: Mannheimia haemolytica lktA LAMP (bovine respiratory disease panel)
+# ============================================================================
+# Target: Mannheimia haemolytica (leukotoxin A, lktA) -- the primary bacterial
+#         secondary pathogen driving mortality in bovine respiratory disease (BRD).
+#
+# Why this target:
+#   Mannheimia haemolytica is a Gram-negative Pasteurellaceae commensal of the
+#   bovine nasopharynx.  Under conditions of viral immunosuppression (BRSV, BCoV,
+#   BVDV, IBR), or transport stress, M. haemolytica rapidly overgrows and invades
+#   the lower respiratory tract, causing the acute fibrinous lobar pneumonia
+#   characteristic of "shipping fever."  Untreated, BRD pneumonia is fatal;
+#   treated, it causes permanent lung damage and reduced weight gain.
+#
+#   M. haemolytica is a chromosomal DNA target -- no reverse transcription is
+#   needed.  Standard DNA-LAMP (Bst 2.0 at 63-65 degC) gives a result in under
+#   30 minutes, fully compatible with a BioVind-style portable platform.
+#
+# lktA rationale:
+#   The leukotoxin A gene (lktA) encodes the RTX-family beta-pore-forming toxin
+#   responsible for the alveolar macrophage and neutrophil lysis that drives the
+#   fibrinous lesion in BRD pneumonia.  lktA is:
+#     - Present in all virulent M. haemolytica isolates tested in BRD outbreaks
+#     - Absent from commensal non-pathogenic Mannheimia species and from
+#       Pasteurella multocida (the second-most-common BRD bacterial pathogen)
+#     - The basis of M. haemolytica-specific PCR assays in published diagnostic
+#       and epidemiological studies (Highlander et al. 1989; Strawn et al.)
+#
+#   The lktA CDS (~9.5 kb) encodes the full RTX toxin repeat structure.  The
+#   ATP-binding domain (N-terminal) and acylation sites are the most conserved
+#   blocks -- LAMP-Forge will identify these as high-priority primer windows.
+#
+# BRD panel:
+#   M. haemolytica (MHAE) is the fifth and only bacterial channel in the BRD
+#   panel.  The co-detection pattern BRSV+ / MHAE+ is the highest-mortality BRD
+#   pattern, flagged as CRITICAL by the lamp-forge bov-risk command.
+#
+#   After designing all five BRD targets independently:
+#     lamp-forge panel \
+#       --set BRSV=results/brsv_N_gene/primer_sets.json \
+#       --set BCOV=results/bcov_N_gene/primer_sets.json \
+#       --set BVDV=results/bvdv_5utr/primer_sets.json \
+#       --set IBR=results/ibr_gB/primer_sets.json \
+#       --set MHAE=results/mhae_lktA/primer_sets.json \
+#       --top-per-target 5 \
+#       --out results/brd_5plex_panel
+#
+# Key parameter notes:
+#   - tm_min: 60.0 -- DNA target; standard LAMP floor.
+#     Do NOT raise to the RT-LAMP 63 degC floor used for BRSV / BVDV / BCoV.
+#   - gc_min/gc_max: 38-58% -- M. haemolytica has ~41% GC; lktA is comparable.
+#     The narrow window reflects the relatively uniform GC content within the
+#     Pasteurellaceae family.
+#   - conservation.entropy_threshold: 0.20 -- lktA is a single-species marker
+#     under functional constraint; within-species identity is >96%.
+#   - Specificity: the critical differentials are Pasteurella multocida (does NOT
+#     carry lktA) and Bibersteinia trehalosi (carries a closely related
+#     leukotoxin gene; confirm no cross-reactivity in specificity report).
+#
+# References:
+#   Highlander SK, Engler MJ & Weinstock GM (1989) Secretion and virulence of
+#   Pasteurella haemolytica leukotoxin. J Bacteriol 171:1862-1872.
+#   Dassanayake RP, Shanthalingam S, Subramaniam R & Srikumaran S (2010)
+#   Mannheimia haemolytica leukotoxin-induced cytolysis of ovine and bovine
+#   leukocytes is primarily dependent on interaction with lymphocyte function-
+#   associated antigen-1. Microb Pathog 48:71-76.
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63. doi:10.1093/nar/28.12.e63
+# ============================================================================
+
+target:
+  name: mhae_lktA
+  taxon_id: 75984                # Mannheimia haemolytica (NCBI TaxID)
+  accessions: []                 # taxon-driven fetch; add specific serotype A1/A2/A6
+                                  # accessions to widen strain diversity if needed
+  gene: lktA                     # leukotoxin A; alt NCBI annotation: "RTX toxin" / "lkt"
+  max_sequences: 25              # M. haemolytica lktA is well-conserved; 25 spans key serotypes
+  email: you@your-inst.edu      # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Critical differentials within Pasteurellaceae co-isolated from BRD pneumonia:
+  #
+  #   pasteurella_multocida.fasta - most common BRD co-pathogen; does NOT carry lktA;
+  #                                 assay must clearly distinguish from M. haemolytica
+  #   bibersteinia_trehalosi.fasta - formerly M. haemolytica serotype T; carries a
+  #                                  divergent RTX toxin (lktA homolog); confirm < 80% identity
+  #   mannheimia_glucosida.fasta  - congener without lktA; tests assay specificity within genus
+  #   haemophilus_somni.fasta     - Histophilus somni; third BRD bacterial pathogen;
+  #                                 distinct from Pasteurellaceae but co-isolated in pneumonia
+  #   bos_taurus_fragment.fasta   - ARS-UCD2.0 chr1 subset; host DNA from bronchoalveolar lavage
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80  # standard; Bibersteinia trehalosi RTX toxin will be caught
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30               # DNA bacterial gene; standard window
+  entropy_threshold: 0.20       # lktA is a single-species marker; tight threshold appropriate
+  min_region_length: 220        # lktA CDS is ~9500 nt; many conserved windows available
+
+primer:
+  tm_min: 60.0                  # DNA target -- standard LAMP Tm floor; NOT RT-LAMP
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 38.0                  # M. haemolytica GC ~41%; lower floor for GC-poor regions
+  gc_max: 58.0                  # conservative upper bound; lktA is not GC-rich
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/mhae_lktA
+  top_n: 10
+  generate_html: true
+  generate_csv: true

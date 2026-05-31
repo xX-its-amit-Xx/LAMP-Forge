@@ -1,0 +1,102 @@
+# LAMP-Forge config: IBR/BoHV-1 gB gene LAMP (bovine respiratory disease panel)
+# ============================================================================
+# Target: Infectious bovine rhinotracheitis virus (IBR; Bovine alphaherpesvirus 1
+#         / BoHV-1) -- detection via glycoprotein B (gB / UL27 gene).
+#
+# Why this target:
+#   IBR is caused by Bovine alphaherpesvirus 1 (BoHV-1), a large double-stranded
+#   DNA herpesvirus (~135 kb genome).  BoHV-1 establishes lifelong latency in
+#   trigeminal and sacral ganglia; reactivation under stress (transport, weaning,
+#   crowding) causes recurring respiratory disease and reproductive failure.
+#
+#   IBR is subject to mandatory national control or eradication programmes in the
+#   EU, UK, and Scandinavia -- a positive BoHV-1 detection triggers movement
+#   restrictions and mandatory reporting to the national competent authority in
+#   these jurisdictions.  On BioVind's BRD panel, an IBR-positive result
+#   distinguishes vaccine-related shedding (modified live vaccine strains) from
+#   wild-type field infection -- the two require different management responses.
+#
+#   BoHV-1 is a dsDNA virus; detection does NOT require reverse transcription.
+#   Standard DNA-LAMP (Bst 2.0 at 63-65 degC) is sufficient -- the same
+#   isothermal reaction used for bacterial LAMP targets.
+#
+# gB rationale:
+#   Glycoprotein B (gB; encoded by UL27) is the principal entry glycoprotein
+#   of alphaherpesviruses and the most conserved major glycoprotein across
+#   BoHV-1 subtypes 1 and 2.  It is the basis of the ELISA-blocking tests used
+#   in EU eradication programmes and of several published BoHV-1 PCR assays
+#   (Wiedemann et al. 1993; Claus et al. 2005).  The UL27 CDS (~2.7 kb) contains
+#   multiple conserved blocks accessible to LAMP.
+#
+#   BoHV-1 has two major subtypes:
+#     - BoHV-1.1 (respiratory isolates; classical IBR)
+#     - BoHV-1.2 (genital isolates; infectious pustular vulvovaginitis / IPV)
+#   Both subtypes are covered by gB-based assays.  Include sequences from both
+#   subtypes in the input set for broad subtype detection.
+#
+# Key parameter notes:
+#   - tm_min: 60.0 -- BoHV-1 is a dsDNA virus; standard LAMP Tm floor.
+#     Do NOT raise to the RT-LAMP 63 degC floor used for BRSV / BVDV / BCoV.
+#   - gc_min/gc_max: 50-75% -- BoHV-1 has ~72% GC content overall; the gB gene
+#     is similarly GC-rich (~68-72%).  The wide upper bound accommodates the
+#     GC-rich conserved blocks of the gB CDS.
+#   - conservation.entropy_threshold: 0.20 -- BoHV-1 gB is under strong
+#     functional constraint (required for viral entry); within-subtype identity
+#     is >98%.  Tight threshold exploits the most conserved domains.
+#
+# References:
+#   Wiedemann M, Kunath K & Ludwig H (1993) Sequence of the glycoprotein B gene
+#   of bovine herpesvirus 1. Vet Microbiol 36:215-222.
+#   Claus MP, Alfieri AF, Folguini LA, Takiuchi E, Possebon FS & Alfieri AA (2005)
+#   Rapid detection of bovine herpesvirus type 1 in aborted fetus and newborn calf
+#   tissues by PCR. Braz J Microbiol 36:17-20.
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63. doi:10.1093/nar/28.12.e63
+# ============================================================================
+
+target:
+  name: ibr_gB
+  taxon_id: 10320                # Bovine alphaherpesvirus 1 (NCBI TaxID for BoHV-1)
+  accessions: []                 # taxon-driven fetch; add subtype-specific accessions
+                                  # to include BoHV-1.1 (respiratory) and BoHV-1.2 (genital)
+  gene: UL27                     # glycoprotein B (gB); NCBI annotation: "glycoprotein B" or "UL27"
+  max_sequences: 25              # BoHV-1 is a relatively conserved herpesvirus within-species
+  email: you@your-inst.edu      # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Alphaherpesviruses share gB structural domains; include the closest bovine
+  # and equine relatives as off-target differentials.
+  #
+  #   bohv4.fasta    - BoHV-4 (Bovine gammaherpesvirus 4); same host, different family
+  #   bohv5.fasta    - BoHV-5 (Bovine alphaherpesvirus 5; encephalitis virus); closest
+  #                    BoHV-1 relative; ~78% gB nt identity; critical specificity test
+  #   ehv1.fasta     - Equine herpesvirus 1 (EHV-1); alphaherpesvirus; ~45% gB identity
+  #   caprine_herpesvirus.fasta - CpHV-1 (Caprid alphaherpesvirus 1); small ruminant host;
+  #                    relevant for mixed-species farms
+  #   bos_taurus_fragment.fasta - ARS-UCD2.0 chr1 subset; host DNA from nasal swab / blood
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80  # standard; BoHV-5 at ~78% gB identity will be caught
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30               # DNA herpesvirus: standard window; gB is moderately sized
+  entropy_threshold: 0.20       # BoHV-1 gB is under strong functional constraint; tight threshold
+  min_region_length: 200        # UL27 is ~2700 nt -- expect several conserved windows
+
+primer:
+  tm_min: 60.0                  # DNA target -- standard LAMP Tm floor; NOT RT-LAMP
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 50.0                  # BoHV-1 gB is GC-rich (~68-72%); raise floor substantially
+  gc_max: 75.0                  # allow up to 75% GC to capture the most conserved gB motifs
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/ibr_gB
+  top_n: 10
+  generate_html: true
+  generate_csv: true

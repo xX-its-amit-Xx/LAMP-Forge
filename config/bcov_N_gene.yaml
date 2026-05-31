@@ -1,0 +1,108 @@
+# LAMP-Forge config: BCoV N gene RT-LAMP (bovine respiratory disease panel)
+# ============================================================================
+# Target: Bovine coronavirus (BCoV) -- broad-spectrum detection via the N gene
+#         (nucleocapsid protein), the canonical BCoV molecular marker.
+#
+# Why this target:
+#   Bovine coronavirus (BCoV; Betacoronavirus 1) causes three distinct bovine
+#   disease syndromes: (1) calf neonatal diarrhea (winter dysentery), (2) calf
+#   respiratory disease, and (3) adult shipping fever.  In BRD outbreaks,
+#   BCoV acts as a primary viral pathogen that depresses local immunity and
+#   potentiates secondary bacterial infection by Mannheimia haemolytica.
+#
+#   BCoV is a positive-sense ssRNA Betacoronavirus closely related to human
+#   coronavirus OC43 (HCoV-OC43), which is estimated to have diverged from
+#   BCoV ~130 years ago.  This high similarity to OC43 (~95-96% N-gene nt
+#   identity) is the primary specificity challenge: the assay must not fire on
+#   OC43, a common human respiratory pathogen.  Tight off-target thresholds and
+#   careful window selection are required.
+#
+#   Detection requires RT-LAMP.  One-step RT-LAMP (Bst 2.0 WarmStart + NEB
+#   RTx) at 63-65 degC delivers a result in under 30 minutes, compatible with
+#   BioVind-style portable platforms.
+#
+# N gene rationale:
+#   The N gene (~1350 nt CDS, encoding the ~448 aa nucleocapsid protein) is the
+#   most abundantly transcribed coronavirus ORF, the basis of standard BCoV
+#   RT-PCR assays (Mebus method; Saif et al.), and provides the highest primer
+#   target density of any BCoV gene.  N-gene-based assays detect both
+#   respiratory and enteric BCoV strains -- important because the same virus
+#   circulates across both syndromes.
+#
+# OC43 specificity challenge:
+#   BCoV and HCoV-OC43 share ~95-96% N-gene nt identity.  Even at an 85%
+#   identity threshold, the BLAST screen will flag OC43 as a close match.
+#   Select primer sets whose conserved window positions are in the ~50-300 nt
+#   N-gene region where BCoV-specific insertions/deletions create 4-6%
+#   divergence from OC43 -- or raise identity_threshold to 0.92 after reviewing
+#   the specificity heatmap.
+#
+# RT-LAMP readiness:
+#   After design, validate Tm suitability for one-step RT-LAMP:
+#     lamp-forge rt-check --input results/bcov_N_gene/primer_sets.json --na-type rna
+#
+# Key parameter notes:
+#   - tm_min: 63.0 -- one-step RT-LAMP co-activity floor.
+#   - conservation.entropy_threshold: 0.25 -- BCoV N gene is quite conserved
+#     across field strains (~98-99% nt identity within BCoV); this tight threshold
+#     ensures the assay targets the most conserved blocks.
+#   - gc_min/gc_max: 30-55% -- BCoV is ~38% GC overall; N gene is ~42-45% GC.
+#   - min_identity_threshold: 0.85 -- flag any off-target match at or above 85%.
+#     Expect OC43 hits at ~95%; review the heatmap and consider primers in
+#     BCoV-unique regions if OC43 cross-reactivity is unacceptable.
+#
+# References:
+#   Saif LJ (2004) Animal coronaviruses: what can they teach us about the
+#   severe acute respiratory syndrome? Rev Sci Tech 23:643-660.
+#   Kin N, Miszczak F, Lin W, Gouilh MA & Vabret A (2015) Genomic analysis of
+#   15 human coronaviruses OC43 (HCoV-OC43s) circulating in France from 2001 to
+#   2013 reveals a high intra-specific diversity with new recombinant genotypes.
+#   Viruses 7:2358-2377. doi:10.3390/v7052358 (phylogenetic context for BCoV/OC43)
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63. doi:10.1093/nar/28.12.e63
+# ============================================================================
+
+target:
+  name: bcov_N_gene
+  taxon_id: 11128                # Bovine coronavirus (Betacoronavirus 1; NCBI TaxID)
+  accessions: []                 # taxon-driven fetch is sufficient; add specific
+                                  # field-isolate accessions to widen strain diversity
+  gene: N                        # nucleocapsid protein N; alt annotation: "nucleoprotein"
+  max_sequences: 30              # span enteric + respiratory strains and geographic diversity
+  email: you@your-inst.edu      # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # BCoV is closely related to HCoV-OC43 (~95-96% N-gene nt identity) -- the
+  # primary specificity challenge.  Include OC43 as the key off-target.
+  #
+  #   hcov_oc43.fasta - NC_006213.1; ~95-96% BCoV N-gene identity; primary off-target risk
+  #   sars_cov_2.fasta - NC_045512.2; distantly related; confirm no cross-reactivity
+  #   bovine_torovirus.fasta - AY427798.1; Torovirus genus; bovine GI co-infection
+  #   brsv.fasta      - include if designing the full BRD panel; rules out BRSV cross-flag
+  #   bos_taurus_fragment.fasta - ARS-UCD2.0 chr1 subset; host DNA from nasal/rectal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # flag OC43 hits (expected ~95%); review heatmap before ordering
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25               # RNA virus: shorter window catches constrained blocks
+  entropy_threshold: 0.25       # BCoV N gene is highly conserved within-species (~98-99%)
+  min_region_length: 200        # N CDS is ~1350 nt -- expect 3-5 conserved windows
+
+primer:
+  tm_min: 63.0                  # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 30.0                  # BCoV N gene is slightly GC-poor (~42-45%); lower floor
+  gc_max: 55.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/bcov_N_gene
+  top_n: 10
+  generate_html: true
+  generate_csv: true

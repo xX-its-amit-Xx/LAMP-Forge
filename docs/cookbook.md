@@ -2996,3 +2996,196 @@ lamp-forge validate \
   *Clin Microbiol Infect* 22 Suppl 4:S63-81. doi:10.1016/j.cmi.2016.03.010
 - Notomi T et al. (2000). Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 23 -- Bovine Respiratory Disease (BRD) five-target panel (`lamp-forge bov-risk`)
+
+**Goal.** Build a five-channel multiplex isothermal panel that detects the major
+viral and bacterial pathogens driving bovine respiratory disease (BRD) from a
+single nasal swab or bronchoalveolar lavage sample -- fast enough to influence
+treatment decisions before antimicrobials are administered.
+
+**Why it's interesting.** BRD ("shipping fever") is the leading cause of morbidity
+and mortality in beef feedlots and a major cause of dairy production loss worldwide,
+with estimated annual losses exceeding USD 900 million in North America alone.  The
+disease follows a predictable two-hit pattern: a primary viral pathogen (BRSV, BCoV,
+BVDV, or IBR) depresses respiratory immunity, allowing *Mannheimia haemolytica* to
+invade the lower airways and cause the acute fibrinous pneumonia that kills animals.
+Early identification of the viral trigger and bacterial co-infection shapes the
+treatment decision: viral-only BRD may not require antimicrobials; viral + bacterial
+co-infection requires immediate antimicrobial intervention.
+
+A BioVind-style portable platform delivering a five-plex result at the pen-side in
+under 60 minutes enables this treatment-decision window in a way that laboratory
+culture (24-72 hours) cannot.
+
+**Panel targets.**
+
+| Target | Gene | NA type | Config | bov-risk flag |
+|---|---|---|---|---|
+| BRSV | N (nucleoprotein) | RNA | `config/brsv_N_gene.yaml` | `--brsv` |
+| BCoV | N (nucleoprotein) | RNA | `config/bcov_N_gene.yaml` | `--bcov` |
+| BVDV (types 1 + 2) | 5'-UTR | RNA | `config/bvdv_5utr.yaml` | `--bvdv` |
+| IBR / BoHV-1 | gB (UL27) | DNA | `config/ibr_gB.yaml` | `--ibr` |
+| *Mannheimia haemolytica* | lktA | DNA | `config/mhae_lktA.yaml` | `--mhae` |
+
+Three targets are RNA viruses (BRSV, BCoV, BVDV) requiring one-step RT-LAMP at
+63-65 degC (NEB RTx + Bst 2.0 WarmStart).  Two targets are DNA (IBR, MHAE) and
+run at the standard 60-65 degC LAMP window.  Use a single reaction temperature of
+63-65 degC for all five when running as a single multiplexed tube: the DNA-LAMP
+targets function well at this temperature.
+
+**Step 1 -- Design each assay independently.**
+
+```bash
+# RNA virus targets (RT-LAMP: tm_min 63 degC in all three configs)
+docker compose run --rm lamp-forge run --config /work/config/brsv_N_gene.yaml
+docker compose run --rm lamp-forge run --config /work/config/bcov_N_gene.yaml
+docker compose run --rm lamp-forge run --config /work/config/bvdv_5utr.yaml
+
+# DNA targets (standard DNA-LAMP: tm_min 60 degC)
+docker compose run --rm lamp-forge run --config /work/config/ibr_gB.yaml
+docker compose run --rm lamp-forge run --config /work/config/mhae_lktA.yaml
+```
+
+**Step 2 -- Verify RT-LAMP readiness for the three RNA targets.**
+
+```bash
+lamp-forge rt-check \
+  --input results/brsv_N_gene/primer_sets.json --na-type rna \
+  --out-csv results/brsv_N_gene/rt_check.csv
+
+lamp-forge rt-check \
+  --input results/bcov_N_gene/primer_sets.json --na-type rna
+
+lamp-forge rt-check \
+  --input results/bvdv_5utr/primer_sets.json --na-type rna
+```
+
+Sets marked **NOT OPTIMIZED** have core primers below 63 degC.  Re-run with
+`primer.tm_min: 63.0` (already set in all three RNA configs) and re-check.
+
+**Step 3 -- Screen for cross-assay primer compatibility.**
+
+```bash
+lamp-forge panel \
+  --set BRSV=results/brsv_N_gene/primer_sets.json \
+  --set BCOV=results/bcov_N_gene/primer_sets.json \
+  --set BVDV=results/bvdv_5utr/primer_sets.json \
+  --set IBR=results/ibr_gB/primer_sets.json \
+  --set MHAE=results/mhae_lktA/primer_sets.json \
+  --top-per-target 5 \
+  --dimer-dg-threshold -5.0 \
+  --out results/brd_5plex_panel
+```
+
+**Step 4 -- Calculate the pooling sheet.**
+
+Five targets = 30 primers total.  Minimum required stock concentration =
+5 x 44 uM = 220 uM; request 250 uM resuspension from IDT or Twist.
+
+```bash
+lamp-forge pool \
+  --panel results/brd_5plex_panel/panel.json \
+  --stock-conc 250 \
+  --total-volume 500 \
+  --out results/brd_5plex_panel/pool_sheet.csv
+```
+
+**Step 5 -- Export to vendor order.**
+
+```bash
+lamp-forge panel-export \
+  --panel results/brd_5plex_panel/panel.json \
+  --format idt \
+  --out orders/brd_5plex_idt_order.csv
+```
+
+**Step 6 -- Estimate assay LOD before ordering.**
+
+Nasal swab in 500 uL PBS, 50% extraction, 50 uL eluate, 5 uL to reaction:
+
+```bash
+lamp-forge lod \
+  --sample-volume 500 \
+  --efficiency 0.50 \
+  --eluate-volume 50 \
+  --reaction-input 5
+```
+
+Effective sample = 500 x 0.5 x (5/50) = 25 uL per reaction -> LOD_95 approx
+120 copies/mL.  BRSV loads in nasal secretions during acute febrile phase reach
+10^5-10^7 copies/mL, providing orders-of-magnitude headroom.
+
+**Step 7 -- Interpret BRD panel results.**
+
+```bash
+# BRSV + M. haemolytica co-detected (highest-mortality BRD pattern):
+lamp-forge bov-risk --brsv --mhae
+
+# BVDV detected alone (screen herd for persistently infected animals):
+lamp-forge bov-risk --bvdv
+
+# Full panel from a JSON flags file (e.g. output from a portable device):
+lamp-forge bov-risk --input-json results/brd_flags.json \
+  --out-json results/brd_assessment.json
+```
+
+Key clinical patterns interpreted by `lamp-forge bov-risk`:
+
+| Flags | Alert | Interpretation |
+|---|---|---|
+| BRSV + MHAE | CRITICAL | Viral-bacterial co-infection; initiate antimicrobials immediately |
+| BVDV alone | HIGH | Screen herd for PI animals; movement restriction; notify veterinarian |
+| IBR alone | MODERATE | Mandatory notification in EU/UK/Scandinavia; check programme rules |
+| BCoV alone | MODERATE | Supportive care; monitor for Mannheimia secondary infection |
+
+**Target biology notes.**
+
+*BRSV.* Bovine orthopneumovirus (Family Pneumoviridae, negative-sense ssRNA) has
+two subgroups (A and B; ~80-85% N-gene nt identity).  The N-gene config includes
+representative accessions from both subgroups; verify from NCBI and expand to
+>= 20 diverse field strains before running.
+
+*BCoV.* Bovine coronavirus (Betacoronavirus 1, positive-sense ssRNA) is closely
+related to human HCoV-OC43 (~95-96% N-gene nt identity).  Review the specificity
+heatmap for OC43 hits and prefer primer windows in BCoV-specific N-gene regions.
+
+*BVDV.* Pestivirus bovis (positive-sense ssRNA; Family Flaviviridae) has two types
+(BVDV-1: NCBI TaxID 11099; BVDV-2: NCBI TaxID 97012) sharing ~75-80% 5'-UTR identity.
+Add BVDV-2 complete genome accessions to `bvdv_5utr.yaml` before running for
+pan-BVDV coverage.
+
+*IBR / BoHV-1.* Bovine alphaherpesvirus 1 (dsDNA, ~72% GC) causes latent infection.
+The gB config sets gc_min=50% / gc_max=75% for the GC-rich UL27 gene.  Standard
+DNA-LAMP (no RT); IBR detection may trigger mandatory reporting in EU/UK/Scandinavia.
+
+*Mannheimia haemolytica.* Gram-negative Pasteurellaceae (~41% GC); the only bacterial
+channel.  lktA encodes the RTX leukotoxin; it is absent from *Pasteurella multocida*,
+making it a highly specific M. haemolytica marker.  Standard DNA-LAMP.
+
+**Wet-lab notes.**
+
+- Use a combined RNA/DNA extraction kit to capture both RNA virus targets and the
+  bacterial DNA target from a single nasal swab eluate.
+- Validate the five-plex at 63 degC (the RT-LAMP floor) across all five channels
+  simultaneously using synthetic RNA/DNA standards.
+- Include a 16S rRNA internal control (Recipe 19) to confirm extraction success.
+- IBR detection requires confirmatory serology at an accredited laboratory before
+  mandatory reporting obligations are triggered.
+
+**References.**
+
+- USDA-NAHMS (2011) Feedlot 2011, Part I: Baseline reference of feedlot management.
+  USDA APHIS Veterinary Services.
+- Valarcher JF et al. (1999) Evolution of bovine respiratory syncytial virus.
+  *J Virol* 74:10714-10728. doi:10.1128/JVI.74.22.10714-10728.2000
+- Saif LJ (2004) Animal coronaviruses: what can they teach us about SARS?
+  *Rev Sci Tech* 23:643-660.
+- Ridpath JF (2010) Bovine viral diarrhea virus: global status. *Vet Clin North
+  Am Food Anim Pract* 26:105-121. doi:10.1016/j.cvfa.2009.10.007
+- Highlander SK et al. (1989) Secretion and virulence of *Pasteurella haemolytica*
+  leukotoxin. *J Bacteriol* 171:1862-1872.
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
