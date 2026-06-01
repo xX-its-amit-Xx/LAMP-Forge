@@ -4345,3 +4345,264 @@ positive controls or synthetic RNA standards.
   *J Virol Methods* 250:7-12. doi:10.1016/j.jviromet.2017.09.014
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 30 -- Poultry biosecurity four-target panel (`lamp-forge poultry-risk`)
+
+**Goal.**  A single-cartridge, on-farm LAMP panel that simultaneously screens
+commercial broiler, layer, and breeder flocks for the four most economically
+important and / or WOAH-notifiable poultry diseases: Avian Influenza A (AIV),
+Newcastle Disease (NDV), Infectious Bursal Disease (IBDV / Gumboro), and
+Infectious Bronchitis (IBV).
+
+**Why it complements the existing panels.** The farm biosecurity panel
+(Recipe 8 / `lamp-forge farm-risk`) covers a mixed-livestock view (ASFV, FMDV,
+AIV, NDV, PRRSV) optimised for integrated swine-and-poultry operations.
+Dedicated poultry farms need a tighter panel that includes IBDV and IBV --
+the two non-WOAH-listed but commercially devastating diseases -- and omits
+swine-specific targets.  This recipe builds that dedicated panel.
+
+**Pathogens and target genes.**
+
+| Target | Gene   | Assay type | WOAH status | Weight |
+|--------|--------|-----------|-------------|--------|
+| AIV    | M gene | RT-LAMP   | Tier 1 (HPAI) | 60 |
+| NDV    | M gene | RT-LAMP   | Listed        | 35 |
+| IBDV   | VP2    | LAMP      | Listed (some regions) | 20 |
+| IBV    | N gene | RT-LAMP   | Not globally listed | 10 |
+
+Both AIV and NDV are RNA viruses requiring RT-LAMP (RTx + Bst 2.0).  IBDV is
+a double-stranded RNA virus; the VP2 assay also uses a one-step RT-LAMP
+protocol.  IBV (gamma coronavirus) is single-stranded positive-sense RNA and
+likewise runs as RT-LAMP.  All four can be designed with
+`--na-type rna` / `--vertical farm` in the scaffold command.
+
+**Designing the four assays (one command per target).**
+
+```bash
+# AIV -- all subtypes via the M gene (pan-IAV)
+lamp-forge scaffold \
+  --target-name influenza_a_M \
+  --vertical farm \
+  --na-type rna \
+  --taxon-id 11520 \
+  --gene M \
+  --out config/influenza_a_M.yaml
+
+# NDV -- pan-NDV via the M gene
+lamp-forge scaffold \
+  --target-name ndv_M_gene \
+  --vertical farm \
+  --na-type rna \
+  --taxon-id 11234 \
+  --gene M \
+  --out config/ndv_M_gene.yaml
+
+# IBDV -- VP2 (most conserved; covers classic and vvIBDV)
+lamp-forge scaffold \
+  --target-name ibdv_VP2 \
+  --vertical farm \
+  --na-type rna \
+  --taxon-id 12227 \
+  --gene VP2 \
+  --out config/ibdv_VP2.yaml
+
+# IBV -- N gene (pan-IBV; serotype agnostic)
+lamp-forge scaffold \
+  --target-name ibv_N_gene \
+  --vertical farm \
+  --na-type rna \
+  --taxon-id 11120 \
+  --gene N \
+  --out config/ibv_N_gene.yaml
+```
+
+Run each design:
+
+```bash
+for cfg in influenza_a_M ndv_M_gene ibdv_VP2 ibv_N_gene; do
+  lamp-forge run --config config/${cfg}.yaml
+done
+```
+
+**Off-target panel.** A poultry panel must not cross-react with:
+
+| File | Source | Why |
+|---|---|---|
+| `gallus_gallus_fragment.fasta` | GRCg7b chr1 subset | Host (*Gallus gallus*) DNA in all swab samples |
+| `ibv_Ma5.fasta` | NC_001451.1 | Vaccine-strain IBV (Massachusetts 5); must not be misidentified as field strain |
+| `ndv_lentogenic.fasta` | Representative La Sota strain | Vaccine NDV; distinguish from velogenic field strains |
+| `ibdv_classic.fasta` | Classic IBDV reference | Verify vvIBDV assay also captures classic strains |
+| `mycoplasma_gallisepticum.fasta` | Representative MG strain | Common co-infection; must not produce false positive |
+
+**RT-LAMP readiness check.** Verify all four assay sets meet the 63 degC
+minimum incubation-temperature requirement for one-step RT-LAMP:
+
+```bash
+for target in influenza_a_M ndv_M_gene ibdv_VP2 ibv_N_gene; do
+  echo "=== ${target} ==="
+  lamp-forge rt-check \
+    --input results/${target}/primer_sets.json \
+    --na-type rna \
+    --out-csv results/${target}/rt_check.csv
+done
+```
+
+Sets flagged **NOT OPTIMIZED** have at least one core primer below 63 degC;
+tighten `primer.tm_min: 63.0` in the corresponding config and re-run design.
+
+**Multiplex cross-dimer screen.** Once all four assays have clean primer
+sets, screen for inter-assay cross-dimerisation (ΔG < -5 kcal/mol is
+flagged as incompatible):
+
+```bash
+lamp-forge panel \
+  --set AIV=results/influenza_a_M/primer_sets.json \
+  --set NDV=results/ndv_M_gene/primer_sets.json \
+  --set IBDV=results/ibdv_VP2/primer_sets.json \
+  --set IBV=results/ibv_N_gene/primer_sets.json \
+  --top-per-target 5 \
+  --out results/poultry_4plex
+```
+
+The panel command emits `panel.json` (compatible set) and `panel_report.html`
+(cross-dimer heatmap).  The BioVind BioID cartridge has up to 18 channels,
+so a four-target poultry panel fits comfortably alongside a 16S extraction
+control, leaving headroom for future targets such as Marek's Disease Virus
+(MDV) or Mycoplasma gallisepticum (MG).
+
+**Equimolar pooling sheet.**
+
+```bash
+lamp-forge pool \
+  --panel results/poultry_4plex/panel.json \
+  --stock-conc 100 \
+  --total-volume 500 \
+  --out results/poultry_4plex/pool_sheet.csv
+```
+
+For four targets the combined pool concentration is 4 x 44 uM = 176 uM, which
+exceeds a standard 100 uM stock.  Request 200 uM resuspension from IDT or
+Twist, or order pre-pooled plates with custom concentrations:
+
+```bash
+lamp-forge export \
+  --input results/influenza_a_M/primer_sets.json \
+  --format idt \
+  --target-label AIV_M \
+  --out orders/AIV_M_idt.csv
+# ... repeat for each target, then concatenate the CSV files
+```
+
+**Interpreting a result with `lamp-forge poultry-risk`.**
+
+After the BioID device reads the cartridge, enter the positivity flags
+directly to get a structured alert:
+
+```bash
+# All four negative (clean flock)
+lamp-forge poultry-risk
+
+# IBDV detected in broiler chicks (Gumboro outbreak)
+lamp-forge poultry-risk --ibdv
+
+# AIV + IBV co-detected (presumptive HPAI; secondary respiratory co-infection)
+lamp-forge poultry-risk --aiv --ibv
+
+# NDV + IBDV co-detected (velogenic NDV in immunosuppressed flock)
+lamp-forge poultry-risk --ndv --ibdv
+
+# Read flags from a JSON file produced by the BioID device integration
+lamp-forge poultry-risk \
+  --input-json device_output/run_20260601_flock42.json \
+  --out-json results/poultry/flock42_assessment.json \
+  --out-csv  results/poultry/flock42_assessment.csv
+```
+
+The command prints a colour-coded alert table:
+
+```
+Poultry biosecurity LAMP panel results:
+  AIV   (M gene)  [-]
+  NDV   (M gene)  [-]
+  IBDV  (VP2  )   [+]
+  IBV   (N gene)  [-]
+
+Alert level : MODERATE  (score 20/100)
+
+Interpretation:
+  Infectious bursal disease virus (IBDV / Gumboro) detected via the VP2 assay...
+Recommended action:
+  Notify the flock health veterinarian. Assess birds aged 2-8 weeks for...
+```
+
+When AIV is detected, two additional warnings appear:
+
+```
+  REPORT REQUIRED: notify the national veterinary authority before any birds are moved or culled.
+  ZOONOTIC RISK: all personnel in the affected house must wear N95 respirators, eye protection, and gloves.
+  DEPOPULATION RISK: consult the national authority before any birds are moved; emergency depopulation may be required.
+```
+
+**Alert level reference.**
+
+| Score | Level    | Trigger                         | Immediate action |
+|-------|----------|---------------------------------|-----------------|
+| 60+   | CRITICAL | AIV detected (pan-IAV positive) | PPE, report to national authority, no bird movement |
+| 35-59 | HIGH     | NDV, or NDV + IBDV / IBV        | Quarantine, confirmatory PCR, vet call |
+| 20-34 | MODERATE | IBDV alone or IBDV + IBV        | Vet assessment, vaccination review |
+| 10-19 | LOW      | IBV alone                       | Respiratory management, serotype S1 sequencing |
+| 0     | NEGATIVE | All negative                    | Confirm extraction control positive |
+
+**LOD estimate for a cloacal-swab sample** (100 uL swab eluate, 60% RNA
+extraction efficiency, 50 uL eluate, 5 uL to RT-LAMP reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 100 \
+  --efficiency 0.60 \
+  --eluate-volume 50 \
+  --reaction-input 5
+```
+
+Effective sample volume = 100 x 0.6 x (5/50) = 6 uL.
+LOD_95 ~ 3.0 / 6 ~ 500 copies/mL of swab eluate.
+AIV viral loads in cloacal swabs from HPAI-infected birds can reach
+10^6-10^9 TCID50/mL, providing ample headroom for detection within the
+BioID 30-60 min run window.
+
+**Field notes.**
+
+- **AIV positives must be treated as presumptive HPAI** until the HA/NA
+  subtype is confirmed by a WOAH Reference Laboratory.  Under national HPAI
+  response plans, premises are quarantined and birds must not be moved until
+  the authority gives clearance.  Do not depopulate based solely on an on-farm
+  LAMP result; premature depopulation can void indemnity claims.
+- **NDV positives require F-gene pathotyping** at a reference laboratory to
+  distinguish velogenic (notifiable) from lentogenic (vaccine-origin) strains.
+  A field-positive NDV LAMP result is a presumptive positive pending this
+  confirmation.
+- **IBDV immunosuppression amplifies all other infections.** A flock with a
+  positive IBDV result is at elevated risk from secondary respiratory viruses
+  (including IBV), E. coli, and vaccine failures.  Review the entire health
+  programme, not just the IBDV result.
+- **IBV serotype diversity.** The N-gene assay detects all IBV serotypes but
+  cannot distinguish them.  If the assay is positive, send tracheal swab
+  material for S1 gene sequencing to match the circulating serotype against
+  current vaccine strains; serotype mismatch is the most common cause of
+  vaccine failure.
+
+**References.**
+
+- Swayne DE (2012) Impact of vaccines and vaccination on global control of
+  avian influenza. *Avian Dis* 56(4 suppl):818-828.
+  doi:10.1637/10138-091511-Review.1
+- Alexander DJ (2000) Newcastle disease and other avian paramyxoviruses.
+  *Rev Sci Tech OIE* 19(2):443-462. doi:10.20506/rst.19.2.1231
+- van den Berg TP (2000) Acute infectious bursal disease in poultry:
+  a review. *Avian Pathol* 29(3):175-194. doi:10.1080/030794500412385
+- Cavanagh D (2007) Coronavirus avian infectious bronchitis virus.
+  *Vet Res* 38(2):281-297. doi:10.1051/vetres:2006055
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

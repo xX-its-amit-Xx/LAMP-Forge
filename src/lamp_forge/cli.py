@@ -3991,6 +3991,188 @@ def swine_enteric_trend(
         click.echo(f"Timeline CSV written to {out_csv}")
 
 
+@cli.command(name="poultry-risk")
+@click.option(
+    "--aiv",
+    "aiv",
+    is_flag=True,
+    default=False,
+    help="Avian influenza A (M gene, pan-IAV) positive.",
+)
+@click.option(
+    "--ndv",
+    "ndv",
+    is_flag=True,
+    default=False,
+    help="Newcastle disease virus (M gene, pan-NDV) positive.",
+)
+@click.option(
+    "--ibdv",
+    "ibdv",
+    is_flag=True,
+    default=False,
+    help="Infectious bursal disease virus / Gumboro (VP2 gene) positive.",
+)
+@click.option(
+    "--ibv",
+    "ibv",
+    is_flag=True,
+    default=False,
+    help="Infectious bronchitis virus (N gene, pan-IBV) positive.",
+)
+@click.option(
+    "--input-json",
+    "input_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Read pathogen flags from a JSON file instead of individual flags. "
+        "Expected keys: aiv, ndv, ibdv, ibv (bool). "
+        "Missing keys default to false."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary to a file.",
+)
+def poultry_risk(
+    aiv: bool,
+    ndv: bool,
+    ibdv: bool,
+    ibv: bool,
+    input_json: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Interpret a poultry biosecurity LAMP panel as a structured alert.
+
+    Takes the positivity flags for four pathogens monitored by a BioVind-style
+    portable poultry biosecurity panel and returns a structured alert with level,
+    score, interpretation, and recommended action.
+
+    AIV (Avian Influenza A) triggers a CRITICAL alert with immediate reporting
+    and zoonotic-risk flags.  NDV triggers a HIGH alert.  IBDV and IBV trigger
+    MODERATE and LOW alerts respectively.
+
+    Panel targets:
+
+    \b
+        --aiv    Avian influenza A        M gene    WOAH Tier 1 notifiable; zoonotic
+        --ndv    Newcastle disease virus  M gene    WOAH-listed notifiable
+        --ibdv   Infect. bursal disease   VP2       Gumboro; immunosuppressive
+        --ibv    Infect. bronchitis       N gene    most prevalent avian coronavirus
+
+    \b
+    Example -- AIV detected (presumptive HPAI):
+        lamp-forge poultry-risk --aiv
+
+    \b
+    Example -- NDV and IBDV co-detected:
+        lamp-forge poultry-risk --ndv --ibdv
+
+    \b
+    Example -- full panel from a JSON flags file:
+        lamp-forge poultry-risk --input-json results/poultry_flags.json \
+          --out-json results/poultry_assessment.json
+    """
+    import json as json_mod
+
+    from lamp_forge.poultry_risk import (
+        PoultryAlertLevel,
+        PoultryFlags,
+        assess_poultry_risk,
+        flags_from_dict,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    if input_json is not None:
+        with input_json.open(encoding="utf-8") as fh:
+            raw: dict[str, object] = json_mod.load(fh)
+        flags = flags_from_dict(raw)
+    else:
+        flags = PoultryFlags(aiv=aiv, ndv=ndv, ibdv=ibdv, ibv=ibv)
+
+    assessment = assess_poultry_risk(flags)
+
+    # --- Panel table ----------------------------------------------------------
+    click.echo("Poultry biosecurity LAMP panel results:")
+    target_rows = [
+        ("AIV", "M gene", assessment.flags.aiv),
+        ("NDV", "M gene", assessment.flags.ndv),
+        ("IBDV", "VP2  ", assessment.flags.ibdv),
+        ("IBV", "N gene", assessment.flags.ibv),
+    ]
+    for label, gene, positive in target_rows:
+        symbol = "+" if positive else "-"
+        click.echo(f"  {label:<5} ({gene})  [{symbol}]")
+
+    click.echo("")
+
+    # --- Alert level (colour-coded) ------------------------------------------
+    level_color = {
+        PoultryAlertLevel.CRITICAL: "red",
+        PoultryAlertLevel.HIGH: "red",
+        PoultryAlertLevel.MODERATE: "yellow",
+        PoultryAlertLevel.LOW: "yellow",
+        PoultryAlertLevel.NEGATIVE: "green",
+    }
+    color = level_color[assessment.alert_level]
+    click.secho(
+        f"Alert level : {assessment.alert_level.value}  (score {assessment.alert_score}/100)",
+        fg=color,
+        bold=(assessment.alert_level in (PoultryAlertLevel.CRITICAL, PoultryAlertLevel.HIGH)),
+    )
+
+    if assessment.immediate_report_required:
+        click.secho(
+            "  REPORT REQUIRED: notify the national veterinary authority "
+            "before any birds are moved or culled.",
+            fg="red",
+            bold=True,
+        )
+
+    if assessment.zoonotic_risk:
+        click.secho(
+            "  ZOONOTIC RISK: all personnel in the affected house must wear "
+            "N95 respirators, eye protection, and gloves.",
+            fg="red",
+            bold=True,
+        )
+
+    if assessment.depopulation_risk:
+        click.secho(
+            "  DEPOPULATION RISK: consult the national authority before "
+            "any birds are moved; emergency depopulation may be required.",
+            fg="red",
+        )
+
+    click.echo("")
+    click.echo("Interpretation:")
+    click.echo(f"  {assessment.interpretation}")
+    click.echo("")
+    click.echo("Recommended action:")
+    click.echo(f"  {assessment.recommended_action}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
 @cli.command(name="cartridge")
 @click.argument(
     "manifest_path",
