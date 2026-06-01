@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import click
+import yaml
 
 from lamp_forge import __version__
 from lamp_forge.config import ConfigError, load_config
@@ -3449,6 +3450,93 @@ def swine_enteric_trend(
     if out_csv is not None:
         write_trend_csv(trend, out_csv)
         click.echo(f"Timeline CSV written to {out_csv}")
+
+
+@cli.command(name="cartridge")
+@click.argument(
+    "manifest_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--out-dir",
+    "out_dir",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Output directory for cartridge_manifest.json and every per-target artifact.",
+)
+@click.option(
+    "--no-html",
+    "no_html",
+    is_flag=True,
+    default=False,
+    help="Skip the HTML reports (panel_report.html and build_report.html).",
+)
+@click.option(
+    "--vendor",
+    "vendor_override",
+    type=click.Choice(["idt", "twist"], case_sensitive=False),
+    default=None,
+    help="Override the manifest's vendor field for the vendor_order.csv export.",
+)
+def cartridge(
+    manifest_path: Path,
+    out_dir: Path,
+    no_html: bool,
+    vendor_override: str | None,
+) -> None:
+    """One-shot BioID cartridge build: panel + pool + LoD + RT + preorder + vendor.
+
+    Loads a cartridge manifest YAML, composes every LAMP-Forge primitive
+    needed for a multi-target SKU, and writes a signed cartridge_manifest.json
+    plus the eight standard build artifacts.
+
+    Exits 0 on GO/WARNING and non-zero on NO_GO -- wire this into a CI
+    pre-order gate so dirty panels and failed RT checks block vendor order
+    submission.
+
+    \b
+    Example -- 18-channel respiratory cartridge:
+        lamp-forge cartridge config/cartridge_respiratory_18ch.yaml \\
+          --out-dir results/resp_18ch_v1
+    """
+    from lamp_forge.cartridge import (
+        load_cartridge_manifest,
+        run_cartridge,
+    )
+
+    try:
+        manifest = load_cartridge_manifest(manifest_path)
+    except (ValueError, OSError, yaml.YAMLError) as exc:
+        click.secho(f"Manifest error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    if vendor_override is not None:
+        from dataclasses import replace
+
+        manifest = replace(manifest, vendor=vendor_override.lower())  # type: ignore[arg-type]
+
+    try:
+        result = run_cartridge(manifest, out_dir, write_html=not no_html)
+    except Exception as exc:
+        click.secho(f"Cartridge build failed: {exc}", fg="red", err=True)
+        if click.get_current_context().obj.get("verbose"):
+            raise
+        sys.exit(1)
+
+    click.echo(
+        f"Cartridge {manifest.cartridge_id}: "
+        f"{len(manifest.targets)}/{manifest.max_channels} channel(s), "
+        f"chemistry={manifest.chemistry}"
+    )
+    color = {"GO": "green", "WARNING": "yellow", "NO_GO": "red"}[result.build_status]
+    click.secho(f"Build status: {result.build_status}", fg=color)
+    for r in result.reasons:
+        click.echo(f"  {r}")
+    click.echo(f"Manifest hash: {result.manifest_hash}")
+    click.echo(f"Outputs written to {out_dir}")
+
+    if result.build_status == "NO_GO":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

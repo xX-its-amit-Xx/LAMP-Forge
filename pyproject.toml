@@ -147,6 +147,9 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]
 "notebooks/**" = ["D"]
+# Click's `\b` no-wrap marker in --help docstrings needs backspace
+# interpretation, which only works in non-raw strings.
+"src/lamp_forge/cli.py" = ["D301"]
 
 [tool.mypy]
 python_version = "3.11"

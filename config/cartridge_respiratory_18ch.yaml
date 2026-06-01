@@ -1,0 +1,110 @@
+# Cartridge manifest -- 18-channel respiratory BioID SKU.
+#
+# This is a "pre-order readiness" build spec: every per-target primer_sets.json
+# must already have been produced by `lamp-forge run` against the matching
+# config (e.g. config/sars_cov_2_N.yaml -> results/sars_cov_2_N/primer_sets.json).
+#
+# Once those exist, build the whole cartridge in one shot:
+#
+#   lamp-forge cartridge config/cartridge_respiratory_18ch.yaml \
+#     --out-dir results/resp_18ch_v1
+#
+# The build fails (exit != 0) if the panel is dirty or any channel is preorder
+# NO_GO -- wire that into CI to block vendor order submission.
+
+cartridge_id: resp_18ch_v1
+chemistry: rt-lamp          # one or more RNA channels present
+max_channels: 18
+
+extraction:
+  sample_volume_ul: 1000.0   # 1 mL nasopharyngeal swab eluent
+  extraction_efficiency: 0.50
+  eluate_volume_ul: 100.0
+  reaction_input_ul: 5.0
+
+device_window_min: 60.0      # BioVind BioID 30-60 min run
+
+pool:
+  stock_conc_um: 500.0       # 18 channels x 44 uM/channel ~= 792 uM => 500 uM is insufficient;
+                              # in production this is requested at >= 800 uM, but the manifest
+                              # validates the panel even if the pool builder raises -- the
+                              # cartridge run pre-flights the panel first.
+  total_pool_volume_ul: 500.0
+
+vendor: idt
+
+# 18 channels: 17 detect + 1 control (16S).
+# Each sets_json path is resolved relative to this manifest file's directory.
+targets:
+  - label: SARS2_N
+    sets_json: ../results/sars_cov_2_N/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: IAV_M
+    sets_json: ../results/influenza_a_M/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: RSV_N
+    sets_json: ../results/rsv_N/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: NDV_M
+    sets_json: ../results/ndv_M_gene/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: PRRSV_ORF7
+    sets_json: ../results/prrsv_orf7/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: BRSV_N
+    sets_json: ../results/brsv_N_gene/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: BCOV_N
+    sets_json: ../results/bcov_N_gene/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: BVDV_5UTR
+    sets_json: ../results/bvdv_5utr/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: FMDV_3D
+    sets_json: ../results/fmdv_3dpol/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: PEDV_N
+    sets_json: ../results/pedv_N_gene/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: IBR_gB
+    sets_json: ../results/ibr_gB/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: ASFV_p72
+    sets_json: ../results/asfv_p72/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: MHAE_lktA
+    sets_json: ../results/mhae_lktA/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: MBOVIS_uvrC
+    sets_json: ../results/mbovis_uvrC/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: MTB_rpoB
+    sets_json: ../results/mtb_rpoB/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: GAS_speB
+    sets_json: ../results/gas_speB/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: CDIFF_tcdB
+    sets_json: ../results/cdiff_tcdB/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: CTRL_16S
+    sets_json: ../results/general_16s/primer_sets.json
+    target_na: dna
+    role: control

@@ -3991,3 +3991,178 @@ farm assay.
   doi:10.1177/1040638713501675
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+
+## Recipe 28 -- One-shot BioID cartridge build (`lamp-forge cartridge`)
+
+Spinning up a new BioVind BioID cartridge SKU means running seven LAMP-Forge
+commands in sequence -- `panel`, `pool`, `lod`, `rt-check`, `preorder`,
+`panel-export` -- and then reconciling the outputs by hand into a single
+GO / WARNING / NO_GO call that decides whether the panel goes to vendor.
+
+Recipe 28 collapses that workflow into one command driven by a single
+**cartridge manifest YAML** that names every channel, the shared extraction
+chain, the device-window budget, the pooling parameters, and the vendor
+format.  The output is a signed, content-addressed cartridge build that
+your CI can gate on.
+
+### Cartridge manifest
+
+`config/cartridge_respiratory_18ch.yaml` describes an 18-channel respiratory
+panel (17 detect channels + a 16S rRNA sample-adequacy control):
+
+```yaml
+cartridge_id: resp_18ch_v1
+chemistry: rt-lamp
+max_channels: 18
+
+extraction:
+  sample_volume_ul: 1000.0
+  extraction_efficiency: 0.50
+  eluate_volume_ul: 100.0
+  reaction_input_ul: 5.0
+
+device_window_min: 60.0
+
+pool:
+  stock_conc_um: 500.0
+  total_pool_volume_ul: 500.0
+
+vendor: idt
+
+targets:
+  - label: SARS2_N
+    sets_json: ../results/sars_cov_2_N/primer_sets.json
+    target_na: rna
+    role: detect
+  - label: IAV_M
+    sets_json: ../results/influenza_a_M/primer_sets.json
+    target_na: rna
+    role: detect
+  # ...
+  - label: CTRL_16S
+    sets_json: ../results/general_16s/primer_sets.json
+    target_na: dna
+    role: control
+```
+
+Each `sets_json` path points at a `primer_sets.json` produced by a prior
+per-target `lamp-forge run`.  Paths in the YAML are resolved relative to the
+manifest file's directory, so a manifest in `config/` referring to
+`../results/...` works regardless of the user's CWD.
+
+### One-shot build
+
+```bash
+lamp-forge cartridge config/cartridge_respiratory_18ch.yaml \
+  --out-dir results/resp_18ch_v1
+```
+
+The command writes eight artifacts into `--out-dir`:
+
+| Artifact | Producer | What it is |
+|---|---|---|
+| `cartridge_manifest.json` | this module | Signed top-level build record (see below). |
+| `panel.json`, `panel_primers.csv`, `panel_report.html` | `panel.run_panel` | Cross-dimer-clean per-channel set selection. |
+| `pool_plan.csv` | `pool.build_pool_plan` | Pipetting sheet for the multiplex working stock. |
+| `lod_panel.csv` | local | One LoD row per channel + a `WORST(...)` summary row. |
+| `rt_check.csv` | `rt_lamp.write_rt_check_csv` | Stacked RT-LAMP Tm check across every channel. |
+| `preorder_<label>.csv` | `preorder.write_preorder_csv` | One per channel. |
+| `vendor_order.csv` | `vendor_export.write_vendor_csv` | Single IDT/Twist order CSV across every channel. |
+| `build_report.html` | local | Human-readable cartridge summary + LoD bar chart. |
+
+### Cartridge-level status rollup
+
+`cartridge_manifest.json` carries a single `build_status` field:
+
+```jsonc
+{
+  "schema_version": "1.0",
+  "cartridge_id": "resp_18ch_v1",
+  "chemistry": "rt-lamp",
+  "max_channels": 18,
+  "n_targets": 18,
+  "build_status": "GO",
+  "reasons": [
+    "All 18 channel(s) pass preorder, panel is clean, and every RNA channel is RT-LAMP optimised."
+  ],
+  "per_target": [
+    {
+      "label": "SARS2_N",
+      "set_id": "region_03_set_017",
+      "composite_score": 0.873,
+      "target_na": "rna",
+      "preorder_status": "GO",
+      "rt_check": { "n_sets": 5, "n_sets_rt_ok": 5 },
+      "lod": { "lod_copies_per_rxn": 2.996, "lod_copies_per_ml": 119.84 }
+    }
+    // ... 17 more
+  ],
+  "panel_summary": {
+    "worst_inter_assay_dg": -3.42,
+    "is_clean": true,
+    "flagged_cross_dimers": []
+  },
+  "panel_lod_worst": { "label": "IBR_gB", "lod_copies_per_ml": 119.84 },
+  "manifest_hash": "8f2c... (SHA-256 of manifest + per-target outputs)"
+}
+```
+
+Rollup rules:
+
+- Any channel with `preorder_status == "NO_GO"` -> cartridge **NO_GO**.
+- Panel `is_clean == false` (flagged inter-assay cross-dimers) -> cartridge **NO_GO**.
+- Any RNA channel with zero RT-optimised sets -> cartridge **NO_GO**.
+- Any channel `WARNING` (TTP near limit, some RT sets sub-optimal) -> cartridge **WARNING**.
+- Otherwise -> cartridge **GO**.
+
+`manifest_hash` is the SHA-256 of the canonical JSON over the inputs
+(cartridge id, chemistry, extraction, pool, vendor, every target's
+`primer_sets.json` SHA-256) and the per-target outputs.  Two back-to-back
+runs over the same inputs produce the same hash; changing a single primer
+base in any `primer_sets.json` changes the hash.
+
+### Wiring into a pre-order CI gate
+
+`lamp-forge cartridge` returns a non-zero exit code when `build_status ==
+"NO_GO"`.  Drop the command into the same CI step that uploads to your
+vendor portal:
+
+```yaml
+# .github/workflows/preorder.yml (excerpt)
+- name: Build cartridge
+  run: |
+    lamp-forge cartridge config/cartridge_respiratory_18ch.yaml \
+      --out-dir results/resp_18ch_v1
+- name: Upload vendor CSV
+  if: success()
+  run: ./scripts/upload_to_idt.sh results/resp_18ch_v1/vendor_order.csv
+- name: Archive signed manifest
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: cartridge-manifest
+    path: results/resp_18ch_v1/cartridge_manifest.json
+```
+
+A dirty panel or a failed RT check now physically blocks the order
+upload -- and the archived `cartridge_manifest.json` is the audit trail
+for every cartridge SKU that does ship.
+
+**Field note.** The cartridge command never re-designs primers; it composes
+the existing pipeline's outputs.  When a build comes back **NO_GO** for
+panel uncleanness, the fix is upstream: re-run `lamp-forge run` for the
+offending channel(s) in a different conserved window, or tighten the Tm
+window for sub-optimal RT-LAMP sets, then re-build.  The signed
+`manifest_hash` makes it obvious whether a re-build is over the same
+underlying primer sets or a different set.
+
+**References.**
+
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+- Tanner NA et al. (2012) Visual detection of isothermal nucleic acid
+  amplification using pH-sensitive dyes.  *BioTechniques* 53(2):81-89.
+  doi:10.2144/0000113902
+- New England Biolabs.  WarmStart(R) LAMP Kit (DNA & RNA) instruction
+  manual, E1700.  2024.
