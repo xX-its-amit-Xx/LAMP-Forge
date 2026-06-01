@@ -34,8 +34,9 @@ def _flags(
     bvdv: bool = False,
     ibr: bool = False,
     mhae: bool = False,
+    mbovis: bool = False,
 ) -> BovPanelFlags:
-    return BovPanelFlags(brsv=brsv, bcov=bcov, bvdv=bvdv, ibr=ibr, mhae=mhae)
+    return BovPanelFlags(brsv=brsv, bcov=bcov, bvdv=bvdv, ibr=ibr, mhae=mhae, mbovis=mbovis)
 
 
 def _rec(
@@ -309,6 +310,7 @@ class TestToDict:
             "ibr_cleared",
             "bvdv_endemic",
             "bacterial_coinfection_count",
+            "mbovis_detected_count",
             "worst_alert_level",
             "interpretation",
             "recommended_action",
@@ -467,6 +469,7 @@ class TestRecordsFromBovJson:
         bvdv: bool = False,
         ibr: bool = False,
         mhae: bool = False,
+        mbovis: bool = False,
         date: str | None = None,
     ) -> None:
         data: dict[str, object] = {
@@ -477,6 +480,7 @@ class TestRecordsFromBovJson:
                 "bvdv": bvdv,
                 "ibr": ibr,
                 "mhae": mhae,
+                "mbovis": mbovis,
             },
         }
         if date is not None:
@@ -576,6 +580,7 @@ class TestWriteTrendCsv:
             "bvdv",
             "ibr",
             "mhae",
+            "mbovis",
             "alert_level",
         ]
 
@@ -604,6 +609,58 @@ class TestWriteTrendCsv:
 
 
 # ---------------------------------------------------------------------------
+# M. bovis detected count (6th BRD channel)
+# ---------------------------------------------------------------------------
+
+
+class TestMbovisDetectedCount:
+    def test_count_zero_when_absent(self) -> None:
+        recs = [_rec("S1", _flags(brsv=True)), _rec("S2")]
+        t = analyse_bov_trend(recs)
+        assert t.mbovis_detected_count == 0
+
+    def test_count_one_for_single_interval(self) -> None:
+        recs = [_rec("S1", _flags(mbovis=True)), _rec("S2")]
+        t = analyse_bov_trend(recs)
+        assert t.mbovis_detected_count == 1
+
+    def test_count_two_for_two_intervals(self) -> None:
+        recs = [
+            _rec("S1", _flags(mbovis=True)),
+            _rec("S2", _flags(mbovis=True)),
+            _rec("S3"),
+        ]
+        t = analyse_bov_trend(recs)
+        assert t.mbovis_detected_count == 2
+
+    def test_mbovis_in_timeline_dict(self) -> None:
+        recs = [_rec("S1", _flags(mbovis=True)), _rec("S2")]
+        t = analyse_bov_trend(recs)
+        tl = t.to_dict()["timeline"]
+        assert isinstance(tl, list)
+        assert tl[0]["mbovis"] is True
+        assert tl[1]["mbovis"] is False
+
+    def test_mbovis_persistent_note_in_interpretation(self) -> None:
+        recs = [
+            _rec("S1", _flags(mbovis=True)),
+            _rec("S2", _flags(mbovis=True)),
+            _rec("S3", _flags(mbovis=True)),
+        ]
+        t = analyse_bov_trend(recs)
+        text = t.interpretation.lower()
+        assert "bovis" in text or "mycoplasma" in text or "beta-lactam" in text
+
+    def test_mbovis_csv_column_written(self, tmp_path: Path) -> None:
+        t = _analyse(_rec("S1", _flags(mbovis=True)), _rec("S2"))
+        out = tmp_path / "trend.csv"
+        write_trend_csv(t, out)
+        dr = list(csv.DictReader(out.open()))
+        assert dr[0]["mbovis"] == "1"
+        assert dr[1]["mbovis"] == "0"
+
+
+# ---------------------------------------------------------------------------
 # CLI tests
 # ---------------------------------------------------------------------------
 
@@ -623,6 +680,7 @@ class TestBovTrendCli:
         brsv: bool = False,
         ibr: bool = False,
         mhae: bool = False,
+        mbovis: bool = False,
     ) -> None:
         data: dict[str, object] = {
             "alert_level": "LOW",
@@ -632,6 +690,7 @@ class TestBovTrendCli:
                 "bvdv": False,
                 "ibr": ibr,
                 "mhae": mhae,
+                "mbovis": mbovis,
             },
         }
         with path.open("w") as fh:

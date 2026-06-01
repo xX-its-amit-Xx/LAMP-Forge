@@ -34,6 +34,7 @@ def _flags(**kwargs: bool) -> BovPanelFlags:
         "bvdv": False,
         "ibr": False,
         "mhae": False,
+        "mbovis": False,
     }
     defaults.update(kwargs)
     return BovPanelFlags(**defaults)
@@ -187,6 +188,63 @@ class TestIbrMandatoryNotification:
 
 
 # ---------------------------------------------------------------------------
+# M. bovis (6th BRD channel)
+# ---------------------------------------------------------------------------
+
+
+class TestMbovisFlag:
+    def test_mbovis_alone_is_moderate(self) -> None:
+        # weight=20; MODERATE boundary is >=20
+        a = _assess(mbovis=True)
+        assert a.alert_level is BovAlertLevel.MODERATE
+        assert a.alert_score == 20
+
+    def test_mbovis_mhae_is_high(self) -> None:
+        # 20 + 20 = 40; HIGH boundary is >=30 <50
+        a = _assess(mbovis=True, mhae=True)
+        assert a.alert_level is BovAlertLevel.HIGH
+        assert a.alert_score == 40
+
+    def test_mbovis_brsv_is_critical(self) -> None:
+        # 20 + 35 = 55 -> CRITICAL
+        a = _assess(mbovis=True, brsv=True)
+        assert a.alert_level is BovAlertLevel.CRITICAL
+
+    def test_mbovis_pan_resistant_when_positive(self) -> None:
+        a = _assess(mbovis=True)
+        assert a.mbovis_pan_resistant is True
+
+    def test_mbovis_pan_resistant_false_when_absent(self) -> None:
+        a = _assess(brsv=True, mhae=True)
+        assert a.mbovis_pan_resistant is False
+
+    def test_mbovis_interpretation_mentions_beta_lactam(self) -> None:
+        a = _assess(mbovis=True)
+        text = (a.interpretation + a.recommended_action).lower()
+        assert "beta-lactam" in text or "penicillin" in text
+
+    def test_mbovis_action_mentions_susceptibility(self) -> None:
+        a = _assess(mbovis=True)
+        assert "susceptib" in a.recommended_action.lower()
+
+    def test_mbovis_in_active_targets(self) -> None:
+        a = _assess(mbovis=True)
+        assert "MBOVIS" in a.active_targets
+
+    def test_mbovis_canonical_order_after_mhae(self) -> None:
+        a = _assess(mbovis=True, brsv=True, mhae=True)
+        targets = list(a.active_targets)
+        assert targets.index("BRSV") < targets.index("MHAE") < targets.index("MBOVIS")
+
+    def test_mbovis_defaults_false(self) -> None:
+        # 5-channel construction must still work
+        a = assess_bov_risk(
+            BovPanelFlags(brsv=False, bcov=False, bvdv=False, ibr=False, mhae=False)
+        )
+        assert a.mbovis_pan_resistant is False
+
+
+# ---------------------------------------------------------------------------
 # Active targets
 # ---------------------------------------------------------------------------
 
@@ -273,6 +331,7 @@ class TestToDict:
             "active_targets",
             "ibr_mandatory_notification",
             "bacterial_coinfection",
+            "mbovis_pan_resistant",
             "interpretation",
             "recommended_action",
             "panel_flags",
@@ -290,6 +349,12 @@ class TestToDict:
         assert pf["brsv"] is True
         assert pf["mhae"] is True
         assert pf["bcov"] is False
+        assert pf["mbovis"] is False
+
+    def test_mbovis_panel_flag_serialised(self) -> None:
+        d = _assess(mbovis=True).to_dict()
+        assert d["panel_flags"]["mbovis"] is True  # type: ignore[index]
+        assert d["mbovis_pan_resistant"] is True
 
     def test_json_serialisable_critical(self) -> None:
         d = _assess(brsv=True, mhae=True).to_dict()
@@ -482,3 +547,13 @@ class TestBovRiskCli:
         result = self._run(["--brsv"])
         output = result.output.lower()  # type: ignore[union-attr]
         assert "vaccin" in output or "biosecurity" in output or "ventilation" in output
+
+    def test_mbovis_shows_moderate(self) -> None:
+        result = self._run(["--mbovis"])
+        assert result.exit_code == 0, result.output  # type: ignore[union-attr]
+        assert "MODERATE" in result.output  # type: ignore[union-attr]
+
+    def test_mbovis_warns_pan_resistance(self) -> None:
+        result = self._run(["--mbovis"])
+        output = result.output.lower()  # type: ignore[union-attr]
+        assert "beta-lactam" in output or "susceptib" in output

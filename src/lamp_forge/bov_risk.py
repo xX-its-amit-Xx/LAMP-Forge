@@ -132,6 +132,10 @@ class BovPanelFlags:
         bvdv: Bovine viral diarrhea virus (5-UTR, types 1 and 2) positive.
         ibr: Infectious bovine rhinotracheitis / BoHV-1 (gB / UL27) positive.
         mhae: Mannheimia haemolytica (lktA leukotoxin A) positive.
+        mbovis: Mycoplasma bovis (uvrC DNA repair gene) positive.
+            6th BRD channel; pan-resistant strains require susceptibility
+            testing before antimicrobial therapy.  Default False for
+            backward compatibility with 5-channel panel outputs.
     """
 
     brsv: bool
@@ -139,6 +143,7 @@ class BovPanelFlags:
     bvdv: bool
     ibr: bool
     mhae: bool
+    mbovis: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +159,9 @@ class BovRiskAssessment:
             many EU/UK/Scandinavian jurisdictions mandate notification.
         bacterial_coinfection: True when MHAE is positive and at least one
             viral target is also positive -- the highest-mortality BRD pattern.
+        mbovis_pan_resistant: True when M. bovis is positive.  Field strains
+            are intrinsically resistant to beta-lactams, aminoglycosides, and
+            rifampin; susceptibility testing is required before therapy.
         interpretation: Concise interpretation of the detection pattern.
         recommended_action: Field-actionable recommendation.
     """
@@ -164,6 +172,7 @@ class BovRiskAssessment:
     active_targets: tuple[str, ...]
     ibr_mandatory_notification: bool
     bacterial_coinfection: bool
+    mbovis_pan_resistant: bool
     interpretation: str
     recommended_action: str
 
@@ -179,6 +188,7 @@ class BovRiskAssessment:
             "active_targets": list(self.active_targets),
             "ibr_mandatory_notification": self.ibr_mandatory_notification,
             "bacterial_coinfection": self.bacterial_coinfection,
+            "mbovis_pan_resistant": self.mbovis_pan_resistant,
             "interpretation": self.interpretation,
             "recommended_action": self.recommended_action,
             "panel_flags": {
@@ -187,6 +197,7 @@ class BovRiskAssessment:
                 "bvdv": self.flags.bvdv,
                 "ibr": self.flags.ibr,
                 "mhae": self.flags.mhae,
+                "mbovis": self.flags.mbovis,
             },
         }
 
@@ -200,6 +211,7 @@ _WEIGHT_BCOV = 20
 _WEIGHT_BVDV = 30
 _WEIGHT_IBR = 25
 _WEIGHT_MHAE = 20
+_WEIGHT_MBOVIS = 20
 
 # Targets where a positive triggers regulatory notification obligations
 # (jurisdiction-dependent -- flag and advise user to check local rules)
@@ -211,6 +223,10 @@ _TARGET_DESCRIPTION: dict[str, str] = {
     "BVDV": "Bovine viral diarrhea virus (5-UTR) -- immunosuppressive; BVDV2 haemorrhagic",
     "IBR": "Infectious bovine rhinotracheitis / BoHV-1 (gB) -- latent; mandatory control in EU/UK",
     "MHAE": "Mannheimia haemolytica (lktA) -- primary bacterial BRD pathogen; high mortality",
+    "MBOVIS": (
+        "Mycoplasma bovis (uvrC) -- chronic pneumonia, mastitis, arthritis; "
+        "pan-resistant to beta-lactams; susceptibility testing required"
+    ),
 }
 
 
@@ -248,7 +264,7 @@ def _build_text(
     Returns:
         Two strings: (interpretation, recommended_action).
     """
-    any_positive = any([flags.brsv, flags.bcov, flags.bvdv, flags.ibr, flags.mhae])
+    any_positive = any([flags.brsv, flags.bcov, flags.bvdv, flags.ibr, flags.mhae, flags.mbovis])
 
     if not any_positive:
         return (
@@ -266,13 +282,20 @@ def _build_text(
     if bacterial_coinfection:
         viral_detected = [t for t in ("BRSV", "BCOV", "BVDV", "IBR") if t in active_targets]
         viral_str = ", ".join(viral_detected)
+        mbovis_note = (
+            " MBOVIS also detected: M. bovis is intrinsically resistant to beta-lactams "
+            "and aminoglycosides -- do NOT use penicillin/amoxicillin-based protocols; "
+            "request susceptibility testing before therapy."
+            if flags.mbovis
+            else ""
+        )
         interp = (
             f"Viral-bacterial BRD co-infection detected: {viral_str} + Mannheimia haemolytica "
             f"(lktA). This is the highest-mortality pattern in bovine respiratory disease -- "
             f"M. haemolytica exploits viral immunosuppression to colonise the lower respiratory "
             f"tract, producing leukotoxin (LktA) that destroys alveolar macrophages and "
             f"neutrophils. Combined viral + M. haemolytica BRD carries case-fatality rates of "
-            f"5-20% in untreated feedlot cattle."
+            f"5-20% in untreated feedlot cattle.{mbovis_note}"
         )
         action = (
             "IMMEDIATE: Initiate antimicrobial therapy (florfenicol, tulathromycin, or enrofloxacin "
@@ -280,6 +303,37 @@ def _build_text(
             "animals showing early signs. Isolate affected animals. Notify site veterinarian. "
             "If BVDV is positive, screen for persistently infected (PI) animals -- a PI animal "
             "shedding virus is the index-case driver and must be removed from the herd."
+        )
+        return interp, action
+
+    # M. bovis alone or with MHAE (no viral co-detection)
+    if flags.mbovis and n_viral == 0:
+        mhae_note = (
+            " Concurrent M. haemolytica (lktA) detection raises the probability of "
+            "polymicrobial bacterial pneumonia; initiate broad-spectrum antimicrobials "
+            "that cover MHAE (florfenicol, tulathromycin) while awaiting M. bovis "
+            "susceptibility data."
+            if flags.mhae
+            else ""
+        )
+        interp = (
+            "Mycoplasma bovis (uvrC) detected. M. bovis is the leading mycoplasmal cause "
+            "of bovine respiratory disease, mastitis, and polyarthritis. It is intrinsically "
+            "resistant to all beta-lactam antibiotics (penicillins, cephalosporins), "
+            "aminoglycosides, and rifampin -- standard BRD antimicrobial protocols are "
+            "INEFFECTIVE. Susceptibility testing (MIC panel: florfenicol, enrofloxacin, "
+            "tetracyclines, macrolides) is required before selecting therapy. Chronic "
+            "pneumonia and arthritis sequelae carry high production loss even in survivors."
+            f"{mhae_note}"
+        )
+        action = (
+            "DO NOT use beta-lactam or aminoglycoside antibiotics for M. bovis. "
+            "Submit samples for mycoplasma culture and antimicrobial susceptibility testing. "
+            "While awaiting results, florfenicol or an approved tetracycline may be used "
+            "empirically per local veterinary guidance. Segregate affected animals to "
+            "prevent horizontal transmission (M. bovis spreads via nasal secretions and "
+            "milk). Review colostrum sourcing -- infected dams are a key reservoir. "
+            "Notify site veterinarian."
         )
         return interp, action
 
@@ -430,6 +484,8 @@ def assess_bov_risk(flags: BovPanelFlags) -> BovRiskAssessment:
         score += _WEIGHT_IBR
     if flags.mhae:
         score += _WEIGHT_MHAE
+    if flags.mbovis:
+        score += _WEIGHT_MBOVIS
 
     score = max(0, min(100, score))
 
@@ -439,12 +495,14 @@ def assess_bov_risk(flags: BovPanelFlags) -> BovRiskAssessment:
         ("BVDV", flags.bvdv),
         ("IBR", flags.ibr),
         ("MHAE", flags.mhae),
+        ("MBOVIS", flags.mbovis),
     ]
     active_targets = tuple(label for label, pos in target_order if pos)
 
     any_viral = any([flags.brsv, flags.bcov, flags.bvdv, flags.ibr])
     bacterial_coinfection = flags.mhae and any_viral
     ibr_mandatory_notification = flags.ibr
+    mbovis_pan_resistant = flags.mbovis
 
     alert_level = _alert_level_from_score(score)
     interpretation, recommended_action = _build_text(
@@ -458,6 +516,7 @@ def assess_bov_risk(flags: BovPanelFlags) -> BovRiskAssessment:
         active_targets=active_targets,
         ibr_mandatory_notification=ibr_mandatory_notification,
         bacterial_coinfection=bacterial_coinfection,
+        mbovis_pan_resistant=mbovis_pan_resistant,
         interpretation=interpretation,
         recommended_action=recommended_action,
     )
@@ -481,6 +540,7 @@ def flags_from_dict(data: dict[str, object]) -> BovPanelFlags:
         bvdv=bool(data.get("bvdv", False)),
         ibr=bool(data.get("ibr", False)),
         mhae=bool(data.get("mhae", False)),
+        mbovis=bool(data.get("mbovis", False)),
     )
 
 

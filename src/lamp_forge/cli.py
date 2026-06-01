@@ -1822,13 +1822,20 @@ def poc_risk(
     help="Mannheimia haemolytica (lktA leukotoxin A) positive.",
 )
 @click.option(
+    "--mbovis",
+    "mbovis",
+    is_flag=True,
+    default=False,
+    help="Mycoplasma bovis (uvrC DNA repair gene) positive.",
+)
+@click.option(
     "--input-json",
     "input_json",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
     help=(
         "Read pathogen flags from a JSON file instead of individual flags. "
-        "Expected keys: brsv, bcov, bvdv, ibr, mhae (bool). "
+        "Expected keys: brsv, bcov, bvdv, ibr, mhae, mbovis (bool). "
         "Missing keys default to false."
     ),
 )
@@ -1852,6 +1859,7 @@ def bov_risk(
     bvdv: bool,
     ibr: bool,
     mhae: bool,
+    mbovis: bool,
     input_json: Path | None,
     out_json: Path | None,
     out_csv: Path | None,
@@ -1875,6 +1883,7 @@ def bov_risk(
         --bvdv    Bovine viral diarrhea virus (1+2)     5-UTR
         --ibr     Inf. bovine rhinotracheitis (BoHV-1)  gB / UL27
         --mhae    Mannheimia haemolytica                lktA (leukotoxin A)
+        --mbovis  Mycoplasma bovis (6th channel)        uvrC (DNA repair)
 
     \b
     Example -- BRSV + M. haemolytica co-infection (highest-mortality BRD pattern):
@@ -1905,7 +1914,7 @@ def bov_risk(
             raw: dict[str, object] = json_mod.load(fh)
         flags = flags_from_dict(raw)
     else:
-        flags = BovPanelFlags(brsv=brsv, bcov=bcov, bvdv=bvdv, ibr=ibr, mhae=mhae)
+        flags = BovPanelFlags(brsv=brsv, bcov=bcov, bvdv=bvdv, ibr=ibr, mhae=mhae, mbovis=mbovis)
 
     assessment = assess_bov_risk(flags)
 
@@ -1917,6 +1926,7 @@ def bov_risk(
         ("BVDV", "5-UTR", assessment.flags.bvdv),
         ("IBR", "gB", assessment.flags.ibr),
         ("MHAE", "lktA", assessment.flags.mhae),
+        ("MBOVIS", "uvrC", assessment.flags.mbovis),
     ]
     for label, gene, positive in target_rows:
         symbol = "+" if positive else "-"
@@ -1943,6 +1953,14 @@ def bov_risk(
         click.secho(
             "  Viral-bacterial co-infection: virus + M. haemolytica -- highest-mortality BRD "
             "pattern. Initiate antimicrobial therapy immediately.",
+            fg="red",
+            bold=True,
+        )
+
+    if assessment.mbovis_pan_resistant:
+        click.secho(
+            "  M. bovis detected: DO NOT use beta-lactam or aminoglycoside protocols. "
+            "Submit for susceptibility testing (MIC panel) before selecting antimicrobials.",
             fg="red",
             bold=True,
         )
@@ -3054,7 +3072,7 @@ def bov_trend(
     col_id = max(col_id, 9)
     header = (
         f"{'Sample ID':<{col_id}}  {'Date':<12}  "
-        f"{'BRSV':>5} {'BCOV':>5} {'BVDV':>5} {'IBR':>5} {'MHAE':>5}  Alert"
+        f"{'BRSV':>5} {'BCOV':>5} {'BVDV':>5} {'IBR':>5} {'MHAE':>5} {'MBOVIS':>6}  Alert"
     )
     click.echo(header)
     click.echo("-" * len(header))
@@ -3068,7 +3086,8 @@ def bov_trend(
             f"{'[+]' if r.flags.bcov else '[-]':>5} "
             f"{'[+]' if r.flags.bvdv else '[-]':>5} "
             f"{'[+]' if r.flags.ibr else '[-]':>5} "
-            f"{'[+]' if r.flags.mhae else '[-]':>5}  {lvl}"
+            f"{'[+]' if r.flags.mhae else '[-]':>5} "
+            f"{'[+]' if r.flags.mbovis else '[-]':>6}  {lvl}"
         )
     click.echo("")
 
@@ -3098,6 +3117,13 @@ def bov_trend(
             f"  Bacterial co-infection: M. haemolytica + viral co-detection in "
             f"{trend.bacterial_coinfection_count} interval(s) "
             f"(highest-mortality BRD pattern).",
+            fg="yellow",
+        )
+    if trend.mbovis_detected_count > 0:
+        click.secho(
+            f"  M. bovis detected in {trend.mbovis_detected_count} interval(s): "
+            "beta-lactam/aminoglycoside protocols are INEFFECTIVE; submit for "
+            "susceptibility testing.",
             fg="yellow",
         )
     click.echo(f"  Worst alert level: {trend.worst_alert_level.value}")

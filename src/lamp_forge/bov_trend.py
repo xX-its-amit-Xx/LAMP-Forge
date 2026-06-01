@@ -144,6 +144,9 @@ class BovTrend:
             persistently infected (PI) animal continuously shedding in the herd.
         bacterial_coinfection_count: Number of intervals in which M. haemolytica
             (MHAE) was co-detected with at least one viral target.
+        mbovis_detected_count: Number of intervals in which M. bovis (uvrC)
+            was detected.  Persistent detection suggests endemic respiratory
+            mycoplasmosis; susceptibility testing is required before therapy.
         worst_alert_level: Highest :class:`~lamp_forge.bov_risk.BovAlertLevel`
             observed across all records.
         interpretation: Concise description of the trend pattern.
@@ -157,6 +160,7 @@ class BovTrend:
     ibr_cleared: bool
     bvdv_endemic: bool
     bacterial_coinfection_count: int
+    mbovis_detected_count: int
     worst_alert_level: BovAlertLevel
     interpretation: str
     recommended_action: str
@@ -176,6 +180,7 @@ class BovTrend:
             "ibr_cleared": self.ibr_cleared,
             "bvdv_endemic": self.bvdv_endemic,
             "bacterial_coinfection_count": self.bacterial_coinfection_count,
+            "mbovis_detected_count": self.mbovis_detected_count,
             "worst_alert_level": self.worst_alert_level.value,
             "interpretation": self.interpretation,
             "recommended_action": self.recommended_action,
@@ -188,6 +193,7 @@ class BovTrend:
                     "bvdv": r.flags.bvdv,
                     "ibr": r.flags.ibr,
                     "mhae": r.flags.mhae,
+                    "mbovis": r.flags.mbovis,
                 }
                 for r in self.records
             ],
@@ -201,7 +207,14 @@ class BovTrend:
 
 def _burden(flags: BovPanelFlags) -> int:
     """Count the number of positive targets in a single panel result."""
-    return int(flags.brsv) + int(flags.bcov) + int(flags.bvdv) + int(flags.ibr) + int(flags.mhae)
+    return (
+        int(flags.brsv)
+        + int(flags.bcov)
+        + int(flags.bvdv)
+        + int(flags.ibr)
+        + int(flags.mhae)
+        + int(flags.mbovis)
+    )
 
 
 def _has_bacterial_coinfection(flags: BovPanelFlags) -> bool:
@@ -268,6 +281,7 @@ def _build_trend_text(
     ibr_cleared: bool,
     bvdv_endemic: bool,
     bacterial_coinfection_count: int,
+    mbovis_detected_count: int,
     worst_level: BovAlertLevel,
 ) -> tuple[str, str]:
     """Build (interpretation, recommended_action) strings for a BRD trend.
@@ -279,6 +293,7 @@ def _build_trend_text(
         ibr_cleared: True if IBR was positive before but is now negative.
         bvdv_endemic: True if BVDV detected in every sample.
         bacterial_coinfection_count: Number of intervals with MHAE + viral co-detection.
+        mbovis_detected_count: Number of intervals with M. bovis detected.
         worst_level: Highest alert level across all records.
 
     Returns:
@@ -304,6 +319,13 @@ def _build_trend_text(
         if bacterial_coinfection_count > 0
         else ""
     )
+    mbovis_note = (
+        f" M. bovis detected in {mbovis_detected_count} interval(s): endemic mycoplasmal "
+        "BRD -- beta-lactam and aminoglycoside protocols are INEFFECTIVE; susceptibility "
+        "testing required."
+        if mbovis_detected_count > 1
+        else ""
+    )
 
     if direction is BovTrendDirection.EMERGING:
         if ibr_newly_detected:
@@ -313,6 +335,7 @@ def _build_trend_text(
                 "United Kingdom, and Scandinavia -- regulatory notification may be required."
                 + bvdv_note
                 + coinfection_note
+                + mbovis_note
             )
             action = (
                 "Notify the site veterinarian and check local regulatory requirements for IBR "
@@ -327,6 +350,7 @@ def _build_trend_text(
                 "Control measures may be insufficient -- outbreak risk is rising."
                 + bvdv_note
                 + coinfection_note
+                + mbovis_note
             )
             action = (
                 "Increase monitoring frequency. Review the herd vaccination programme "
@@ -347,6 +371,7 @@ def _build_trend_text(
                 "Control measures appear effective, but sero-conversion may persist."
                 + bvdv_note
                 + coinfection_note
+                + mbovis_note
             )
             action = (
                 "Maintain enhanced biosecurity and movement restrictions. Confirm IBR clearance "
@@ -358,7 +383,10 @@ def _build_trend_text(
         else:
             interp = (
                 f"BRD pathogen burden is decreasing across the {n_samples}-sample time series. "
-                "Control measures appear to be working." + bvdv_note + coinfection_note
+                "Control measures appear to be working."
+                + bvdv_note
+                + coinfection_note
+                + mbovis_note
             )
             action = (
                 "Maintain the current vaccination, biosecurity, and treatment programme. "
@@ -387,6 +415,7 @@ def _build_trend_text(
             f"intervals without a clear downward trend (worst alert: {worst_level.value})."
             + bvdv_note
             + coinfection_note
+            + mbovis_note
         )
         action = (
             "Reassess the BRD control programme with the site veterinarian. "
@@ -401,6 +430,7 @@ def _build_trend_text(
             f"without a clear trend (worst alert: {worst_level.value})."
             + bvdv_note
             + coinfection_note
+            + mbovis_note
         )
         action = (
             "Maintain current biosecurity and vaccination protocols. Consult the site "
@@ -463,6 +493,7 @@ def analyse_bov_trend(records: Sequence[BovRecord]) -> BovTrend:
 
     bvdv_endemic = all(r.flags.bvdv for r in recs)
     bacterial_coinfection_count = sum(1 for r in recs if _has_bacterial_coinfection(r.flags))
+    mbovis_detected_count = sum(1 for r in recs if r.flags.mbovis)
 
     if n < 2:
         interp, action = _build_trend_text(
@@ -472,6 +503,7 @@ def analyse_bov_trend(records: Sequence[BovRecord]) -> BovTrend:
             False,
             bvdv_endemic,
             bacterial_coinfection_count,
+            mbovis_detected_count,
             worst,
         )
         return BovTrend(
@@ -481,6 +513,7 @@ def analyse_bov_trend(records: Sequence[BovRecord]) -> BovTrend:
             ibr_cleared=False,
             bvdv_endemic=bvdv_endemic,
             bacterial_coinfection_count=bacterial_coinfection_count,
+            mbovis_detected_count=mbovis_detected_count,
             worst_alert_level=worst,
             interpretation=interp,
             recommended_action=action,
@@ -495,6 +528,7 @@ def analyse_bov_trend(records: Sequence[BovRecord]) -> BovTrend:
         ibr_cleared,
         bvdv_endemic,
         bacterial_coinfection_count,
+        mbovis_detected_count,
         worst,
     )
 
@@ -505,6 +539,7 @@ def analyse_bov_trend(records: Sequence[BovRecord]) -> BovTrend:
         ibr_cleared=ibr_cleared,
         bvdv_endemic=bvdv_endemic,
         bacterial_coinfection_count=bacterial_coinfection_count,
+        mbovis_detected_count=mbovis_detected_count,
         worst_alert_level=worst,
         interpretation=interp,
         recommended_action=action,
@@ -538,9 +573,11 @@ def records_from_csv(path: Path) -> list[BovRecord]:
         reader = csv.DictReader(fh)
         if reader.fieldnames is None:
             raise ValueError(f"Empty CSV file: {path}")
-        missing = required - {f.strip().lower() for f in reader.fieldnames}
+        col_names = {f.strip().lower() for f in reader.fieldnames}
+        missing = required - col_names
         if missing:
             raise ValueError(f"CSV missing required column(s): {', '.join(sorted(missing))}")
+        has_mbovis = "mbovis" in col_names
         for i, row in enumerate(reader, start=2):
             try:
                 sample_id = row["sample_id"].strip()
@@ -553,6 +590,7 @@ def records_from_csv(path: Path) -> list[BovRecord]:
                     bvdv=_is_truthy(row["bvdv"]),
                     ibr=_is_truthy(row["ibr"]),
                     mhae=_is_truthy(row["mhae"]),
+                    mbovis=_is_truthy(row["mbovis"]) if has_mbovis else False,
                 )
             except KeyError as exc:
                 raise ValueError(f"Row {i}: missing column {exc}") from exc
@@ -594,6 +632,7 @@ def records_from_bov_json(paths: Sequence[Path]) -> list[BovRecord]:
             bvdv=bool(pf.get("bvdv", False)),
             ibr=bool(pf.get("ibr", False)),
             mhae=bool(pf.get("mhae", False)),
+            mbovis=bool(pf.get("mbovis", False)),
         )
         date = str(data["date"]) if "date" in data else None
         result.append(BovRecord(sample_id=p.stem, flags=flags, date=date))
@@ -627,7 +666,9 @@ def write_trend_csv(trend: BovTrend, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow(["sample_id", "date", "brsv", "bcov", "bvdv", "ibr", "mhae", "alert_level"])
+        writer.writerow(
+            ["sample_id", "date", "brsv", "bcov", "bvdv", "ibr", "mhae", "mbovis", "alert_level"]
+        )
         for r in trend.records:
             lvl = assess_bov_risk(r.flags).alert_level.value
             writer.writerow(
@@ -639,6 +680,7 @@ def write_trend_csv(trend: BovTrend, path: Path) -> None:
                     int(r.flags.bvdv),
                     int(r.flags.ibr),
                     int(r.flags.mhae),
+                    int(r.flags.mbovis),
                     lvl,
                 ]
             )
