@@ -4606,3 +4606,125 @@ BioID 30-60 min run window.
   *Vet Res* 38(2):281-297. doi:10.1051/vetres:2006055
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+## Recipe 31 -- Poultry biosecurity outbreak trend analysis (`lamp-forge poultry-trend`)
+
+**Goal.** Convert a chronological series of poultry biosecurity LAMP panel
+results (Recipe 30) into a single trajectory assessment -- EMERGING,
+STABLE_CLEAR, STABLE_ENDEMIC, RESOLVING, or INSUFFICIENT_DATA -- that tells
+farm managers and veterinarians whether the flock situation is getting better,
+holding steady, or deteriorating.
+
+**Why it matters for BioVind.** The BioID cartridge does not replace an
+outbreak-response protocol; it generates a data stream.  A single CRITICAL
+result triggers an immediate response; a trend across monthly or weekly
+monitoring intervals enables smarter decisions about when to escalate, when
+to relax quarantine, and whether a consistently IBV-positive flock is in a
+managed endemic state (normal) or genuinely deteriorating.
+
+**Workflow.**
+
+Step 1 -- generate a per-interval JSON file for each monitoring round:
+
+```bash
+# Month 1 -- IBV only
+lamp-forge poultry-risk --ibv \
+  --out-json results/flock-A/2026-01.json
+
+# Month 2 -- IBDV appears alongside IBV
+lamp-forge poultry-risk --ibdv --ibv \
+  --out-json results/flock-A/2026-02.json
+
+# Month 3 -- AIV detected (presumptive HPAI event)
+lamp-forge poultry-risk --aiv \
+  --out-json results/flock-A/2026-03.json
+```
+
+Step 2 -- compute the trend across all three intervals:
+
+```bash
+lamp-forge poultry-trend \
+  --poultry-result results/flock-A/2026-01.json \
+  --poultry-result results/flock-A/2026-02.json \
+  --poultry-result results/flock-A/2026-03.json \
+  --out-json results/flock-A/trend_Q1.json \
+  --out-csv results/flock-A/trend_Q1.csv
+```
+
+Expected output:
+
+```
+Poultry biosecurity trajectory: 3 sample(s)
+
+Sample ID    Date          AIV   NDV  IBDV   IBV  Alert
+--------------------------------------------------------------
+2026-01      2026-01-15    [-]   [-]   [-]   [+]  LOW
+2026-02      2026-02-15    [-]   [-]   [+]   [+]  MODERATE
+2026-03      2026-03-15    [+]   [-]   [-]   [-]  CRITICAL
+
+Trend direction: EMERGING
+  AIV NEWLY DETECTED: notify the national veterinary authority immediately;
+  quarantine the affected house before any birds are moved.
+  Worst alert level: CRITICAL
+
+Interpretation: WOAH-notifiable pathogen(s) newly detected in the most
+  recent sample: AIV. Biosecurity situation is escalating -- immediate
+  response required.
+
+Recommended action: Notify the national veterinary authority immediately
+  regarding AIV detection. Enforce flock movement restrictions...
+```
+
+**Using a monitoring-spreadsheet CSV instead of per-run JSON files.**
+
+If the farm already keeps a monitoring spreadsheet, export it to CSV and
+supply it directly:
+
+```
+sample_id,date,aiv,ndv,ibdv,ibv
+FlockA-2026-01,2026-01-15,0,0,0,1
+FlockA-2026-02,2026-02-15,0,0,1,1
+FlockA-2026-03,2026-03-15,1,0,0,0
+```
+
+```bash
+lamp-forge poultry-trend \
+  --csv monitoring/flock_A_2026.csv \
+  --out-json results/flock-A/trend_2026.json
+```
+
+**IBV endemic flock scenario.**
+
+A flock in which IBV has been consistently detected across all monitoring
+intervals is flagged as `ibv_endemic: true` in the JSON output.  The
+`poultry-trend` command also prints:
+
+```
+  IBV endemic flock: consistently positive -- review IBV vaccination
+  programme and serotype match with the flock health veterinarian.
+```
+
+This is the expected background state for many commercial flocks; the
+important signal is whether AIV or NDV breaks through on top of the
+endemic IBV baseline.
+
+**Trend direction reference.**
+
+| Direction          | Meaning                                                | Priority action |
+|--------------------|--------------------------------------------------------|----------------|
+| EMERGING           | New WOAH-notifiable pathogen detected, or burden rising | Immediate notification; escalate biosecurity |
+| STABLE_CLEAR       | All negative across all intervals                       | Routine surveillance |
+| STABLE_ENDEMIC     | Pathogens consistently present, no trend                | Review vaccination; consult vet |
+| RESOLVING          | Burden decreasing, or notifiable pathogen cleared       | Confirm with reference lab before relaxing controls |
+| INSUFFICIENT_DATA  | Only one sample available                               | Collect next sample and re-run |
+
+**References.**
+
+- WOAH (2024) List of OIE-notifiable diseases, infections and infestations.
+- Swayne DE (2012) Impact of vaccines and vaccination on global control of
+  avian influenza. *Avian Dis* 56(4 suppl):818-828.
+  doi:10.1637/10138-091511-Review.1
+- Alexander DJ (2000) Newcastle disease and other avian paramyxoviruses.
+  *Rev Sci Tech OIE* 19(2):443-462. doi:10.20506/rst.19.2.1231
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

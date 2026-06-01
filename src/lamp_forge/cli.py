@@ -4173,6 +4173,192 @@ def poultry_risk(
         click.echo(f"CSV summary written to {out_csv}")
 
 
+@cli.command(name="poultry-trend")
+@click.option(
+    "--poultry-result",
+    "poultry_result_paths",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    metavar="PATH",
+    help=(
+        "JSON file produced by 'lamp-forge poultry-risk --out-json' for one "
+        "monitoring interval. Repeat once per sample in chronological order (oldest "
+        "first). Mutually exclusive with --csv."
+    ),
+)
+@click.option(
+    "--csv",
+    "csv_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Monitoring-spreadsheet CSV with columns: sample_id, date (optional), "
+        "aiv, ndv, ibdv, ibv. Rows must be in chronological order "
+        "(oldest first). Mutually exclusive with --poultry-result."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full trend assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the chronological pathogen-flag timeline to a CSV file.",
+)
+def poultry_trend(
+    poultry_result_paths: tuple[Path, ...],
+    csv_path: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Analyse biosecurity trajectory across consecutive poultry LAMP panel results.
+
+    Takes a chronological sequence of poultry biosecurity LAMP panel results and
+    produces a trend assessment: EMERGING, STABLE_CLEAR, STABLE_ENDEMIC,
+    RESOLVING, or INSUFFICIENT_DATA.
+
+    Key events detected:
+
+    \b
+      - WOAH-notifiable pathogen (AIV/NDV) newly detected
+      - WOAH-notifiable pathogen cleared
+      - IBV endemic flock status (consistently positive)
+
+    Input (pick one):
+
+    \b
+      --poultry-result FILE   JSON from 'lamp-forge poultry-risk --out-json',
+                              repeated once per monitoring interval, oldest first.
+      --csv FILE              Monitoring-spreadsheet CSV (header required):
+                                sample_id, date (opt), aiv, ndv, ibdv, ibv
+
+    \b
+    Example -- quarterly AIV surveillance on a broiler farm:
+        lamp-forge poultry-trend \\
+          --poultry-result results/flock-A/2026-01.json \\
+          --poultry-result results/flock-A/2026-02.json \\
+          --poultry-result results/flock-A/2026-03.json \\
+          --out-json results/flock-A/trend_Q1.json
+
+    \b
+    Example -- from a monitoring-spreadsheet CSV:
+        lamp-forge poultry-trend \\
+          --csv monitoring/flock_A_2026.csv \\
+          --out-json results/flock-A/trend_2026.json
+    """
+    from lamp_forge.poultry_risk import assess_poultry_risk as _assess
+    from lamp_forge.poultry_trend import (
+        analyse_poultry_trend,
+        records_from_csv,
+        records_from_poultry_json,
+        write_trend_csv,
+        write_trend_json,
+    )
+
+    if csv_path is not None and poultry_result_paths:
+        click.secho(
+            "--csv and --poultry-result are mutually exclusive. Use one or the other.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+    if csv_path is None and not poultry_result_paths:
+        click.secho(
+            "Provide input via --poultry-result (one or more JSON files) or --csv.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+
+    try:
+        if csv_path is not None:
+            records = records_from_csv(csv_path)
+        else:
+            records = records_from_poultry_json(list(poultry_result_paths))
+    except (ValueError, OSError) as exc:
+        click.secho(f"Input error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        trend = analyse_poultry_trend(records)
+    except ValueError as exc:
+        click.secho(f"Analysis error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    direction_colour = {
+        "EMERGING": "red",
+        "STABLE_CLEAR": "green",
+        "STABLE_ENDEMIC": "yellow",
+        "RESOLVING": "green",
+        "INSUFFICIENT_DATA": "yellow",
+    }
+    col = direction_colour.get(trend.direction.value, "white")
+    click.echo(f"Poultry biosecurity trajectory: {trend.n_samples} sample(s)")
+    click.echo("")
+
+    col_id = max((len(r.sample_id) for r in trend.records), default=10)
+    col_id = max(col_id, 9)
+    header = (
+        f"{'Sample ID':<{col_id}}  {'Date':<12}  "
+        f"{'AIV':>5} {'NDV':>5} {'IBDV':>5} {'IBV':>5}  Alert"
+    )
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for r in trend.records:
+        lvl = _assess(r.flags).alert_level.value
+        date_str = (r.date or "")[:12]
+        click.echo(
+            f"{r.sample_id:<{col_id}}  {date_str:<12}  "
+            f"{'[+]' if r.flags.aiv else '[-]':>5} "
+            f"{'[+]' if r.flags.ndv else '[-]':>5} "
+            f"{'[+]' if r.flags.ibdv else '[-]':>5} "
+            f"{'[+]' if r.flags.ibv else '[-]':>5}  {lvl}"
+        )
+    click.echo("")
+
+    click.secho(f"Trend direction: {trend.direction.value}", fg=col)
+
+    if trend.notifiable_newly_detected:
+        targets = ", ".join(trend.notifiable_newly_detected)
+        click.secho(
+            f"  {targets} NEWLY DETECTED: notify the national veterinary authority "
+            "immediately; quarantine the affected house before any birds are moved.",
+            fg="red",
+            bold=True,
+        )
+    if trend.notifiable_cleared:
+        targets_c = ", ".join(trend.notifiable_cleared)
+        click.secho(
+            f"  {targets_c} cleared: confirm with a WOAH Reference Laboratory "
+            "before lifting movement restrictions.",
+            fg="green",
+        )
+    if trend.ibv_endemic:
+        click.echo(
+            "  IBV endemic flock: consistently positive -- review IBV vaccination "
+            "programme and serotype match with the flock health veterinarian."
+        )
+    click.echo(f"  Worst alert level: {trend.worst_alert_level.value}")
+    click.echo("")
+    click.echo(f"Interpretation: {trend.interpretation}")
+    click.echo("")
+    click.echo(f"Recommended action: {trend.recommended_action}")
+
+    if out_json is not None:
+        write_trend_json(trend, out_json)
+        click.echo(f"\nTrend assessment written to {out_json}")
+    if out_csv is not None:
+        write_trend_csv(trend, out_csv)
+        click.echo(f"Timeline CSV written to {out_csv}")
+
+
 @cli.command(name="cartridge")
 @click.argument(
     "manifest_path",
