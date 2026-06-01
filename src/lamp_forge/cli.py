@@ -3317,6 +3317,162 @@ def brucella_risk(
         click.echo(f"CSV summary written to {out_csv}")
 
 
+@cli.command(name="csfv-risk")
+@click.option(
+    "--ns5b/--no-ns5b",
+    "ns5b_positive",
+    default=False,
+    help="CSFV NS5B RT-LAMP assay result (positive / negative).",
+)
+@click.option(
+    "--context",
+    "context",
+    type=click.Choice(["on_farm", "border_post", "market"], case_sensitive=False),
+    default="on_farm",
+    show_default=True,
+    help=(
+        "Deployment context for the recommended action. "
+        "on_farm=herd surveillance or post-morbidity investigation, "
+        "border_post=border inspection post or port of entry, "
+        "market=livestock market or auction site."
+    ),
+)
+@click.option(
+    "--input-json",
+    "input_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Read flags from a JSON file instead of CLI options. "
+        "Expected keys: ns5b_positive (bool), context (str). "
+        "Missing keys use defaults."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary to a file.",
+)
+def csfv_risk(
+    ns5b_positive: bool,
+    context: str,
+    input_json: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Interpret a CSFV NS5B RT-LAMP result as a structured alert.
+
+    Classical Swine Fever Virus (CSFV; hog cholera) is a WOAH-listed Tier 1
+    notifiable disease causing near-100% case fatality in naive pig herds.
+    It is clinically indistinguishable from African Swine Fever Virus (ASFV) --
+    a BioVind portable device running CSFV and ASFV assays in the same
+    cartridge resolves this differential at the farm gate in under 60 minutes.
+
+    NS5B (RNA-directed RNA polymerase) is the most conserved CSFV gene across
+    all three genotype groups (1/2/3) and requires one-step RT-LAMP.
+
+    Alert levels:
+    \b
+        CRITICAL  -- NS5B positive (any context): WOAH-notifiable, near-100% CFR;
+                     immediate herd quarantine and national-authority notification.
+        NEGATIVE  -- NS5B negative: CSFV not detected.
+
+    \b
+    Example -- positive on-farm detection (differential with ASFV):
+        lamp-forge csfv-risk --ns5b --context on_farm
+
+    \b
+    Example -- positive at a border post:
+        lamp-forge csfv-risk --ns5b --context border_post
+
+    \b
+    Example -- read flags from JSON and write outputs:
+        lamp-forge csfv-risk --input-json results/csfv_flags.json \
+          --out-json results/csfv_assessment.json \
+          --out-csv results/csfv_assessment.csv
+    """
+    import json as json_mod
+
+    from lamp_forge.csfv_risk import (
+        CsfvAlertLevel,
+        CsfvContext,
+        CsfvFlags,
+        assess_csfv_risk,
+        flags_from_dict,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    if input_json is not None:
+        with input_json.open(encoding="utf-8") as fh:
+            raw: dict[str, object] = json_mod.load(fh)
+        flags = flags_from_dict(raw)
+    else:
+        flags = CsfvFlags(
+            ns5b_positive=ns5b_positive,
+            context=CsfvContext(context.lower()),
+        )
+
+    assessment = assess_csfv_risk(flags)
+
+    # --- Result table ---------------------------------------------------------
+    click.echo("CSFV NS5B RT-LAMP result:")
+    symbol = "+" if assessment.flags.ns5b_positive else "-"
+    click.echo(f"  NS5B  (pan-CSFV RNA polymerase)  [{symbol}]")
+    click.echo(f"  Context: {assessment.flags.context.value}")
+    click.echo("")
+
+    # --- Alert level (colour-coded) ------------------------------------------
+    level_color: dict[CsfvAlertLevel, str] = {
+        CsfvAlertLevel.CRITICAL: "red",
+        CsfvAlertLevel.NEGATIVE: "green",
+    }
+    color = level_color[assessment.alert_level]
+    click.secho(
+        f"Alert level : {assessment.alert_level.value}  (score {assessment.alert_score}/100)",
+        fg=color,
+        bold=(assessment.alert_level is CsfvAlertLevel.CRITICAL),
+    )
+
+    if assessment.immediate_report_required:
+        click.secho(
+            "  IMMEDIATE REPORT REQUIRED: notify the national veterinary authority today.",
+            fg="red",
+            bold=True,
+        )
+
+    if assessment.woah_notifiable:
+        click.secho(
+            "  WOAH-NOTIFIABLE: CSFV is a Tier 1 listed disease -- official "
+            "confirmation at a reference laboratory is required before depopulation.",
+            fg="yellow",
+        )
+
+    click.echo("")
+    click.echo("Interpretation:")
+    click.echo(f"  {assessment.interpretation}")
+    click.echo("")
+    click.echo("Recommended action:")
+    click.echo(f"  {assessment.recommended_action}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
 @cli.command(name="swine-enteric-risk")
 @click.option(
     "--pedv",
