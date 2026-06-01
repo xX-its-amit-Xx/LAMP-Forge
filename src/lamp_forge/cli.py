@@ -3317,6 +3317,186 @@ def brucella_risk(
         click.echo(f"CSV summary written to {out_csv}")
 
 
+@cli.command(name="brucella-trend")
+@click.option(
+    "--brucella-result",
+    "brucella_result_paths",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    metavar="PATH",
+    help=(
+        "JSON file produced by 'lamp-forge brucella-risk --out-json' for one "
+        "monitoring interval. Repeat once per sample in chronological order (oldest "
+        "first). Mutually exclusive with --csv."
+    ),
+)
+@click.option(
+    "--csv",
+    "csv_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Monitoring-spreadsheet CSV with columns: sample_id, is711_positive, "
+        "date (optional), context (optional; default cattle). "
+        "Rows must be in chronological order (oldest first). "
+        "Mutually exclusive with --brucella-result."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full trend assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the chronological IS711 timeline to a CSV file.",
+)
+def brucella_trend(
+    brucella_result_paths: tuple[Path, ...],
+    csv_path: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Analyse Brucella IS711 surveillance trajectory across consecutive LAMP results.
+
+    Takes a chronological sequence of Brucella IS711 LAMP results and produces a
+    trend assessment: NEWLY_DETECTED, PERSISTENT, RESOLVING, STABLE_CLEAR, or
+    INSUFFICIENT_DATA.
+
+    Key events detected:
+
+    \b
+      - IS711 newly detected -- WOAH-notifiable event; herd quarantine required
+      - IS711 cleared -- confirm with serology before lifting quarantine
+      - Persistent infection likely -- >= 75% of >= 3 samples positive
+
+    Input (pick one):
+
+    \b
+      --brucella-result FILE   JSON from 'lamp-forge brucella-risk --out-json',
+                               repeated once per monitoring interval, oldest first.
+      --csv FILE               Monitoring-spreadsheet CSV (header required):
+                                 sample_id, is711_positive, date (opt), context (opt)
+
+    \b
+    Example -- quarterly herd surveillance, cattle:
+        lamp-forge brucella-trend \
+          --brucella-result results/herd-A/2026-01.json \
+          --brucella-result results/herd-A/2026-02.json \
+          --brucella-result results/herd-A/2026-03.json \
+          --out-json results/herd-A/trend_Q1.json
+
+    \b
+    Example -- from a monitoring-spreadsheet CSV:
+        lamp-forge brucella-trend \
+          --csv monitoring/herd_A_2026.csv \
+          --out-json results/herd-A/trend_2026.json
+    """
+    from lamp_forge.brucella_risk import assess_brucella_risk as _assess
+    from lamp_forge.brucella_trend import (
+        analyse_brucella_trend,
+        records_from_brucella_json,
+        records_from_csv,
+        write_trend_csv,
+        write_trend_json,
+    )
+
+    if csv_path is not None and brucella_result_paths:
+        click.secho(
+            "--csv and --brucella-result are mutually exclusive. Use one or the other.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+    if csv_path is None and not brucella_result_paths:
+        click.secho(
+            "Provide input via --brucella-result (one or more JSON files) or --csv.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+
+    try:
+        if csv_path is not None:
+            records = records_from_csv(csv_path)
+        else:
+            records = records_from_brucella_json(list(brucella_result_paths))
+    except (ValueError, OSError) as exc:
+        click.secho(f"Input error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        trend = analyse_brucella_trend(records)
+    except ValueError as exc:
+        click.secho(f"Analysis error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    direction_colour = {
+        "NEWLY_DETECTED": "red",
+        "PERSISTENT": "red",
+        "RESOLVING": "green",
+        "STABLE_CLEAR": "green",
+        "INSUFFICIENT_DATA": "yellow",
+    }
+    col = direction_colour.get(trend.direction.value, "white")
+    click.echo(f"Brucella IS711 surveillance trajectory: {trend.n_samples} sample(s)")
+    click.echo("")
+
+    col_id = max((len(r.sample_id) for r in trend.records), default=10)
+    col_id = max(col_id, 9)
+    header = f"{'Sample ID':<{col_id}}  {'Date':<12}  {'IS711':>5}  {'Context':<14}  Alert"
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for r in trend.records:
+        lvl = _assess(r.flags).alert_level.value
+        date_str = (r.date or "")[:12]
+        click.echo(
+            f"{r.sample_id:<{col_id}}  {date_str:<12}  "
+            f"{'[+]' if r.flags.is711_positive else '[-]':>5}  "
+            f"{r.flags.context.value:<14}  {lvl}"
+        )
+    click.echo("")
+
+    click.secho(f"Trend direction: {trend.direction.value}", fg=col)
+
+    if trend.newly_detected:
+        click.secho(
+            "  IS711 NEWLY DETECTED: notify the national veterinary or public health "
+            "authority immediately and initiate herd quarantine.",
+            fg="red",
+            bold=True,
+        )
+    if trend.cleared:
+        click.secho(
+            "  IS711 cleared: confirm with serology before lifting quarantine.",
+            fg="green",
+        )
+    if trend.persistent_infection_likely:
+        click.secho(
+            "  Persistent infection likely: conduct whole-herd serology to identify "
+            "and remove the source animal.",
+            fg="yellow",
+        )
+    click.echo(f"  Worst alert level: {trend.worst_alert_level.value}")
+    click.echo("")
+    click.echo(f"Interpretation: {trend.interpretation}")
+    click.echo("")
+    click.echo(f"Recommended action: {trend.recommended_action}")
+
+    if out_json is not None:
+        write_trend_json(trend, out_json)
+        click.echo(f"\nTrend assessment written to {out_json}")
+    if out_csv is not None:
+        write_trend_csv(trend, out_csv)
+        click.echo(f"Timeline CSV written to {out_csv}")
+
+
 @cli.command(name="csfv-risk")
 @click.option(
     "--ns5b/--no-ns5b",
