@@ -2,7 +2,7 @@
 
 After ``lamp-forge run`` produces a ``primer_sets.json``, use this module (or
 ``lamp-forge export``) to convert the top-ranked sets into a spreadsheet that
-can be pasted directly into an IDT or Twist bulk-order portal.
+can be pasted directly into an IDT, Twist, or Eurofins bulk-order portal.
 
 IDT format
 ----------
@@ -10,7 +10,7 @@ The IDT SDS / Custom DNA Oligos bulk-input table expects four columns::
 
     Name | Sequence | Scale | Purification
 
-Scale options (IDT): ``25nm``, ``100nm``, ``250nm``, ``1umol``, ``5umol``, …
+Scale options (IDT): ``25nm``, ``100nm``, ``250nm``, ``1umol``, ``5umol``, ...
 Purification options: ``STD``, ``HPLC``, ``PAGE``.
 
 Role-based defaults applied when no override is given:
@@ -30,9 +30,35 @@ LAMP-Forge appends four informational columns (Scale, Purification,
 Tm_celsius, Length) so ordering parameters travel with the file when a user
 opens it in a spreadsheet before uploading to the Twist portal.
 
+Eurofins format
+---------------
+Eurofins Genomics (formerly MWG Eurofins) uses a four-column CSV for their
+Custom Oligo ordering portal::
+
+    Name | Sequence | Scale | Purification
+
+Scale options (Eurofins): ``0.04umol``, ``0.2umol``, ``1umol``.
+Purification options: ``Desalt``, ``HPLC``, ``PAGE``.
+
+Role-based Eurofins defaults:
+
+* F3, B3, LF, LB — ``0.04umol / Desalt``
+* FIP, BIP       — ``0.2umol / HPLC``
+
+IDT scale/purification strings stored in VendorRow are automatically converted
+to their Eurofins equivalents (e.g. ``25nm`` -> ``0.04umol``, ``STD`` ->
+``Desalt``).  Four informational columns (IDT_Scale, IDT_Purification,
+Tm_celsius, Length) are appended so ordering context travels with the file.
+
+.. note::
+    Eurofins periodically updates their portal interface and accepted values.
+    Verify scale strings against the current Eurofins Custom Oligos catalog
+    before bulk-uploading.
+
 References:
     IDT Bulk Input: https://www.idtdna.com/pages/tools/bulk-input
     Twist Custom Oligos: https://www.twistbioscience.com/products/oligonucleotides
+    Eurofins Genomics Custom Oligos: https://www.eurofinsgenomics.eu
 """
 
 from __future__ import annotations
@@ -51,6 +77,23 @@ class VendorFormat(StrEnum):
 
     IDT = "idt"
     TWIST = "twist"
+    EUROFINS = "eurofins"
+
+
+# Mapping from IDT-style scale/purification strings (stored in VendorRow) to
+# their Eurofins Genomics portal equivalents.  Unknown strings are kept as-is.
+_IDT_TO_EUROFINS_SCALE: dict[str, str] = {
+    "25nm": "0.04umol",
+    "100nm": "0.2umol",
+    "250nm": "0.2umol",
+    "1umol": "1umol",
+    "5umol": "1umol",
+}
+_IDT_TO_EUROFINS_PURIFICATION: dict[str, str] = {
+    "STD": "Desalt",
+    "HPLC": "HPLC",
+    "PAGE": "PAGE",
+}
 
 
 # Per-role synthesis defaults.  FIP/BIP are chimeric oligos; HPLC removes
@@ -367,6 +410,41 @@ def rows_from_panel_json(
     return rows
 
 
+def write_eurofins_csv(rows: list[VendorRow], path: Path) -> None:
+    """Write a Eurofins Genomics custom-oligo order CSV.
+
+    IDT-style scale/purification strings stored in :class:`VendorRow` are
+    automatically mapped to their Eurofins equivalents (``25nm`` ->
+    ``0.04umol``, ``STD`` -> ``Desalt``, etc.).  Four informational columns
+    are appended so all primer metadata travels with the file.
+
+    Column layout::
+
+        Name | Sequence | Scale | Purification | Tm_celsius | Length
+
+    Args:
+        rows: Vendor rows to serialise.
+        path: Destination path.  Parent directories are created as needed.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["Name", "Sequence", "Scale", "Purification", "Tm_celsius", "Length"])
+        for r in rows:
+            ef_scale = _IDT_TO_EUROFINS_SCALE.get(r.scale, r.scale)
+            ef_purification = _IDT_TO_EUROFINS_PURIFICATION.get(r.purification, r.purification)
+            writer.writerow(
+                [
+                    r.name,
+                    r.sequence,
+                    ef_scale,
+                    ef_purification,
+                    f"{r.tm_celsius:.1f}",
+                    r.length,
+                ]
+            )
+
+
 def write_vendor_csv(
     rows: list[VendorRow],
     path: Path,
@@ -381,5 +459,7 @@ def write_vendor_csv(
     """
     if fmt is VendorFormat.IDT:
         write_idt_csv(rows, path)
+    elif fmt is VendorFormat.EUROFINS:
+        write_eurofins_csv(rows, path)
     else:
         write_twist_csv(rows, path)

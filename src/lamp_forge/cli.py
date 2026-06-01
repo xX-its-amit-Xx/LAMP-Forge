@@ -607,7 +607,7 @@ def ttp(
 @click.option(
     "--format",
     "fmt",
-    type=click.Choice(["idt", "twist"], case_sensitive=False),
+    type=click.Choice(["idt", "twist", "eurofins"], case_sensitive=False),
     default="idt",
     show_default=True,
     help="Vendor order-sheet format.",
@@ -661,15 +661,17 @@ def export(
     scale: str | None,
     purification: str | None,
 ) -> None:
-    r"""Export designed primers to an IDT or Twist vendor order CSV.
+    r"""Export designed primers to an IDT, Twist, or Eurofins vendor order CSV.
 
     Reads the primer_sets.json produced by 'lamp-forge run' and writes a
-    spreadsheet ready for direct upload to the IDT SDS or Twist oligo-order
-    portal.
+    spreadsheet ready for direct upload to the IDT SDS, Twist oligo-order,
+    or Eurofins Genomics portal.
 
     Scale and purification default to role-specific values:
     FIP/BIP get 100nm/HPLC (chimeric oligos benefit from full HPLC
-    purification); F3/B3/LF/LB get 25nm/STD.
+    purification); F3/B3/LF/LB get 25nm/STD.  For Eurofins output,
+    IDT scale strings are automatically converted (25nm -> 0.04umol,
+    100nm -> 0.2umol, STD -> Desalt).
 
     \b
     Example (best set in IDT format):
@@ -686,6 +688,14 @@ def export(
           --format twist \\
           --top-n 3 \\
           --out orders/asfv_twist.csv
+
+    \b
+    Example (best set in Eurofins format):
+        lamp-forge export \\
+          --input results/primer_sets.json \\
+          --format eurofins \\
+          --target-label dsrB_SRB \\
+          --out orders/dsrB_SRB_eurofins.csv
     """
     import json
 
@@ -1225,7 +1235,7 @@ def scaffold(
 @click.option(
     "--format",
     "fmt",
-    type=click.Choice(["idt", "twist"], case_sensitive=False),
+    type=click.Choice(["idt", "twist", "eurofins"], case_sensitive=False),
     default="idt",
     show_default=True,
     help="Vendor order-sheet format.",
@@ -1265,14 +1275,15 @@ def panel_export(
     r"""Export all primers from a multiplex panel to a single vendor order CSV.
 
     Reads the panel.json produced by 'lamp-forge panel' and exports the
-    selected primer set for every target into one IDT or Twist order sheet --
-    removing the need to run 'lamp-forge export' separately for each target.
+    selected primer set for every target into one IDT, Twist, or Eurofins
+    order sheet -- removing the need to run 'lamp-forge export' separately
+    for each target.
 
     Each primer name is prefixed with its target label so rows are
     self-documenting in the vendor portal (e.g. SRB_region_01_set_001_FIP).
 
-    Note: Tm values are not stored in panel.json; the Tm column in Twist
-    output will show 0.0.  For per-primer Tm, use 'lamp-forge export
+    Note: Tm values are not stored in panel.json; the Tm column in Twist and
+    Eurofins output will show 0.0.  For per-primer Tm, use 'lamp-forge export
     --input primer_sets.json' for each target individually.
 
     \b
@@ -1288,6 +1299,13 @@ def panel_export(
           --panel results/farm_biosecurity_4plex/panel.json \
           --format twist \
           --out orders/farm_biosecurity_twist.csv
+
+    \b
+    Example (oilfield souring 3-plex, Eurofins format):
+        lamp-forge panel-export \
+          --panel results/souring_panel/panel.json \
+          --format eurofins \
+          --out orders/souring_eurofins_order.csv
     """
     import json
 

@@ -1,4 +1,4 @@
-"""Tests for the IDT / Twist vendor order-CSV export.
+"""Tests for the IDT / Twist / Eurofins vendor order-CSV export.
 
 All tests are pure Python — no external binaries, no network.
 Primer and LampPrimerSet objects are constructed in-process using the same
@@ -18,6 +18,7 @@ from lamp_forge.vendor_export import (
     primer_to_vendor_row,
     rows_from_json_data,
     rows_from_panel_json,
+    write_eurofins_csv,
     write_idt_csv,
     write_twist_csv,
     write_vendor_csv,
@@ -336,6 +337,133 @@ class TestWriteTwistCsv:
 
 
 # ---------------------------------------------------------------------------
+# write_eurofins_csv
+# ---------------------------------------------------------------------------
+
+
+class TestWriteEurofinsCSv:
+    def test_creates_file(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        assert out.exists()
+
+    def test_header_columns(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        with out.open() as fh:
+            header = next(csv.reader(fh))
+        assert header[:4] == ["Name", "Sequence", "Scale", "Purification"]
+        assert "Tm_celsius" in header
+        assert "Length" in header
+
+    def test_row_count_matches_primers(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        with out.open() as fh:
+            all_rows = list(csv.reader(fh))
+        assert len(all_rows) == 1 + 6
+
+    def test_idt_25nm_converted_to_eurofins_scale(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        with out.open() as fh:
+            data = list(csv.DictReader(fh))
+        outer = {r["Scale"] for r in data if r["Name"].endswith("F3") or r["Name"].endswith("B3")}
+        assert outer == {"0.04umol"}
+
+    def test_idt_100nm_converted_to_eurofins_scale(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        with out.open() as fh:
+            data = list(csv.DictReader(fh))
+        chimeric = {
+            r["Scale"] for r in data if r["Name"].endswith("FIP") or r["Name"].endswith("BIP")
+        }
+        assert chimeric == {"0.2umol"}
+
+    def test_idt_std_converted_to_desalt(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        with out.open() as fh:
+            data = list(csv.DictReader(fh))
+        outer_purif = {
+            r["Purification"] for r in data if r["Name"].endswith("F3") or r["Name"].endswith("B3")
+        }
+        assert outer_purif == {"Desalt"}
+
+    def test_hplc_preserved_for_chimeric_primers(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        with out.open() as fh:
+            data = list(csv.DictReader(fh))
+        chimeric_purif = {
+            r["Purification"]
+            for r in data
+            if r["Name"].endswith("FIP") or r["Name"].endswith("BIP")
+        }
+        assert chimeric_purif == {"HPLC"}
+
+    def test_tm_celsius_is_numeric(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        with out.open() as fh:
+            data = list(csv.DictReader(fh))
+        for row in data:
+            float(row["Tm_celsius"])
+
+    def test_length_column_matches_sequence(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        with out.open() as fh:
+            data = list(csv.DictReader(fh))
+        for row in data:
+            assert int(row["Length"]) == len(row["Sequence"])
+
+    def test_creates_parent_directories(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "sub" / "dir" / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        assert out.exists()
+
+    def test_unknown_scale_passthrough(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps], scale_override="500nm")  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        with out.open() as fh:
+            data = list(csv.DictReader(fh))
+        assert all(r["Scale"] == "500nm" for r in data)
+
+    def test_page_purification_preserved(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps], purification_override="PAGE")  # type: ignore[arg-type, list-item]
+        out = tmp_path / "eurofins.csv"
+        write_eurofins_csv(rows, out)
+        with out.open() as fh:
+            data = list(csv.DictReader(fh))
+        assert all(r["Purification"] == "PAGE" for r in data)
+
+
+# ---------------------------------------------------------------------------
 # write_vendor_csv dispatcher
 # ---------------------------------------------------------------------------
 
@@ -358,6 +486,25 @@ class TestWriteVendorCsv:
         with out.open() as fh:
             header = next(csv.reader(fh))
         assert len(header) == 6
+
+    def test_eurofins_dispatch_produces_six_column_header(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "out.csv"
+        write_vendor_csv(rows, out, VendorFormat.EUROFINS)
+        with out.open() as fh:
+            header = next(csv.reader(fh))
+        assert len(header) == 6
+
+    def test_eurofins_dispatch_uses_eurofins_scale_strings(self, tmp_path: Path) -> None:
+        ps = _make_set()
+        rows = export_rows([ps])  # type: ignore[arg-type, list-item]
+        out = tmp_path / "out.csv"
+        write_vendor_csv(rows, out, VendorFormat.EUROFINS)
+        with out.open() as fh:
+            data = list(csv.DictReader(fh))
+        scales = {r["Scale"] for r in data}
+        assert scales <= {"0.04umol", "0.2umol"}
 
 
 # ---------------------------------------------------------------------------
@@ -563,6 +710,59 @@ class TestExportCli:
         with out.open() as fh:
             rows = list(csv.DictReader(fh))
         assert all(r["Name"].startswith("dsrB_SRB_") for r in rows)
+
+    def test_eurofins_format_exit_zero(self, tmp_path: Path) -> None:
+        from click.testing import CliRunner
+
+        from lamp_forge.cli import cli
+
+        input_json = tmp_path / "primer_sets.json"
+        self._write_primer_sets_json(input_json)
+        out = tmp_path / "order.csv"
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["export", "--input", str(input_json), "--out", str(out), "--format", "eurofins"],
+            obj={},
+        )
+        assert result.exit_code == 0, result.output
+        assert out.exists()
+
+    def test_eurofins_output_has_eurofins_scale_strings(self, tmp_path: Path) -> None:
+        from click.testing import CliRunner
+
+        from lamp_forge.cli import cli
+
+        input_json = tmp_path / "primer_sets.json"
+        self._write_primer_sets_json(input_json)
+        out = tmp_path / "order.csv"
+        runner = CliRunner()
+        runner.invoke(
+            cli,
+            ["export", "--input", str(input_json), "--out", str(out), "--format", "eurofins"],
+            obj={},
+        )
+        with out.open() as fh:
+            data = list(csv.DictReader(fh))
+        scales = {r["Scale"] for r in data}
+        assert scales <= {"0.04umol", "0.2umol"}
+
+    def test_eurofins_default_output_path(self, tmp_path: Path) -> None:
+        from click.testing import CliRunner
+
+        from lamp_forge.cli import cli
+
+        input_json = tmp_path / "primer_sets.json"
+        self._write_primer_sets_json(input_json)
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["export", "--input", str(input_json), "--format", "eurofins"],
+            obj={},
+        )
+        assert result.exit_code == 0, result.output
+        default_out = tmp_path / "primer_sets_eurofins_order.csv"
+        assert default_out.exists()
 
     def test_output_mentions_primer_count(self, tmp_path: Path) -> None:
         from click.testing import CliRunner
