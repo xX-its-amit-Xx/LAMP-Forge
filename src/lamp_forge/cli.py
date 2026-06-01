@@ -3653,6 +3653,187 @@ def csfv_risk(
         click.echo(f"CSV summary written to {out_csv}")
 
 
+@cli.command(name="csfv-trend")
+@click.option(
+    "--csfv-result",
+    "csfv_result_paths",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    metavar="PATH",
+    help=(
+        "JSON file produced by 'lamp-forge csfv-risk --out-json' for one "
+        "monitoring interval. Repeat once per sample in chronological order (oldest "
+        "first). Mutually exclusive with --csv."
+    ),
+)
+@click.option(
+    "--csv",
+    "csv_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Monitoring-spreadsheet CSV with columns: sample_id, ns5b_positive, "
+        "date (optional), context (optional; default on_farm). "
+        "Rows must be in chronological order (oldest first). "
+        "Mutually exclusive with --csfv-result."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full trend assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the chronological NS5B timeline to a CSV file.",
+)
+def csfv_trend(
+    csfv_result_paths: tuple[Path, ...],
+    csv_path: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Analyse CSFV NS5B RT-LAMP surveillance trajectory across consecutive results.
+
+    Takes a chronological sequence of CSFV NS5B RT-LAMP results and produces a
+    trend assessment: NEWLY_DETECTED, ONGOING_OUTBREAK, CONTROLLED, STABLE_CLEAR,
+    or INSUFFICIENT_DATA.
+
+    Key events detected:
+
+    \b
+      - NS5B newly detected   -- WOAH-notifiable; emergency herd quarantine required
+      - NS5B controlled       -- apparent containment; confirm before lifting quarantine
+      - Sustained outbreak    -- >= 75% of >= 3 samples positive; active circulation
+
+    Input (pick one):
+
+    \b
+      --csfv-result FILE   JSON from 'lamp-forge csfv-risk --out-json',
+                           repeated once per monitoring interval, oldest first.
+      --csv FILE           Monitoring-spreadsheet CSV (header required):
+                             sample_id, ns5b_positive, date (opt), context (opt)
+
+    \b
+    Example -- monthly farm surveillance:
+        lamp-forge csfv-trend \
+          --csfv-result results/farm-A/2026-01.json \
+          --csfv-result results/farm-A/2026-02.json \
+          --csfv-result results/farm-A/2026-03.json \
+          --out-json results/farm-A/csfv_trend_Q1.json
+
+    \b
+    Example -- from a monitoring-spreadsheet CSV:
+        lamp-forge csfv-trend \
+          --csv monitoring/farm_A_2026.csv \
+          --out-json results/farm-A/csfv_trend_2026.json
+    """
+    from lamp_forge.csfv_risk import assess_csfv_risk as _assess
+    from lamp_forge.csfv_trend import (
+        analyse_csfv_trend,
+        records_from_csfv_json,
+        records_from_csv,
+        write_trend_csv,
+        write_trend_json,
+    )
+
+    if csv_path is not None and csfv_result_paths:
+        click.secho(
+            "--csv and --csfv-result are mutually exclusive. Use one or the other.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+    if csv_path is None and not csfv_result_paths:
+        click.secho(
+            "Provide input via --csfv-result (one or more JSON files) or --csv.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+
+    try:
+        if csv_path is not None:
+            records = records_from_csv(csv_path)
+        else:
+            records = records_from_csfv_json(list(csfv_result_paths))
+    except (ValueError, OSError) as exc:
+        click.secho(f"Input error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        trend = analyse_csfv_trend(records)
+    except ValueError as exc:
+        click.secho(f"Analysis error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    direction_colour = {
+        "NEWLY_DETECTED": "red",
+        "ONGOING_OUTBREAK": "red",
+        "CONTROLLED": "green",
+        "STABLE_CLEAR": "green",
+        "INSUFFICIENT_DATA": "yellow",
+    }
+    col = direction_colour.get(trend.direction.value, "white")
+    click.echo(f"CSFV NS5B RT-LAMP surveillance trajectory: {trend.n_samples} sample(s)")
+    click.echo("")
+
+    col_id = max((len(r.sample_id) for r in trend.records), default=10)
+    col_id = max(col_id, 9)
+    header = f"{'Sample ID':<{col_id}}  {'Date':<12}  {'NS5B':>5}  {'Context':<12}  Alert"
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for r in trend.records:
+        lvl = _assess(r.flags).alert_level.value
+        date_str = (r.date or "")[:12]
+        click.echo(
+            f"{r.sample_id:<{col_id}}  {date_str:<12}  "
+            f"{'[+]' if r.flags.ns5b_positive else '[-]':>5}  "
+            f"{r.flags.context.value:<12}  {lvl}"
+        )
+    click.echo("")
+
+    click.secho(f"Trend direction: {trend.direction.value}", fg=col)
+
+    if trend.newly_detected:
+        click.secho(
+            "  NS5B NEWLY DETECTED: initiate emergency herd quarantine and notify "
+            "the national veterinary authority immediately (WOAH-listed disease).",
+            fg="red",
+            bold=True,
+        )
+    if trend.controlled:
+        click.secho(
+            "  NS5B controlled: apparent containment -- maintain quarantine and "
+            "confirm with at least three consecutive negatives before review.",
+            fg="green",
+        )
+    if trend.sustained_outbreak:
+        click.secho(
+            "  Sustained outbreak: >= 75% of samples positive -- active CSFV "
+            "circulation; review containment and escalate to national authority.",
+            fg="yellow",
+        )
+    click.echo(f"  Worst alert level: {trend.worst_alert_level.value}")
+    click.echo("")
+    click.echo(f"Interpretation: {trend.interpretation}")
+    click.echo("")
+    click.echo(f"Recommended action: {trend.recommended_action}")
+
+    if out_json is not None:
+        write_trend_json(trend, out_json)
+        click.echo(f"\nTrend assessment written to {out_json}")
+    if out_csv is not None:
+        write_trend_csv(trend, out_csv)
+        click.echo(f"Timeline CSV written to {out_csv}")
+
+
 @cli.command(name="swine-enteric-risk")
 @click.option(
     "--pedv",
