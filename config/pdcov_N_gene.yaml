@@ -1,0 +1,104 @@
+# LAMP-Forge config: Porcine Deltacoronavirus (PDCoV) N-gene RT-LAMP
+# ============================================================================
+# Target: Broad PDCoV detection via the N (nucleocapsid protein) gene
+#
+# Why this target:
+#   Porcine deltacoronavirus (PDCoV; Swine enteric deltacoronavirus, SeCoV)
+#   was first identified in 2012 in Hong Kong and emerged in North America in
+#   early 2014.  It causes acute diarrhea, vomiting, and dehydration in
+#   neonatal piglets with case fatality rates of 40-80% in piglets under one
+#   week of age -- lower than PEDV but operationally significant in farrowing
+#   units and nurseries.  PDCoV co-circulates with PEDV and Porcine Epidemic
+#   Diarrhea Virus in the same farrowing-barn niche, and co-infections with
+#   PEDV or porcine rotavirus A produce compounded mortality.
+#
+#   PDCoV is a positive-sense ssRNA deltacoronavirus (genus Deltacoronavirus,
+#   family Coronaviridae) -- detection requires RT-LAMP.  One-step RT-LAMP
+#   (Bst 2.0 WarmStart + NEB RTx or WarmStart RTx) at 63-65 degC delivers a
+#   yes/no result in under 30 minutes, fully compatible with BioVind portable
+#   platforms.
+#
+#   The N gene (~798 nt CDS) encodes the nucleocapsid protein.  It is the most
+#   conserved coding region in PDCoV across North American and Asian strains and
+#   is the basis of published PDCoV RT-PCR and RT-LAMP assays (Song et al. 2015;
+#   Li et al. 2017).  Unlike the S (spike) gene, which diverges across clades
+#   and is under selection from host immunity, the N gene is constrained by RNA
+#   packaging function and provides the broadest inclusive detection window.
+#
+#   PDCoV is phylogenetically a deltacoronavirus, distinct from the
+#   alphacoronavirus family that includes PEDV and TGEV.  The off-target panel
+#   must include PEDV and TGEV to ensure specificity within the porcine
+#   enteric coronavirus niche.
+#
+#   PDCoV also has zoonotic potential: a 2021 Lancet Microbe report documented
+#   PDCoV infection in three Haitian children.  The N gene is conserved between
+#   porcine and human-infecting strains -- a pan-PDCoV assay provides appropriate
+#   surveillance breadth for both agricultural and public-health applications.
+#
+# This config is the second channel of the three-target swine neonatal enteric
+# panel alongside PEDV (config/pedv_N_gene.yaml) and Porcine Rotavirus A
+# (config/porcine_rota_a.yaml).  After designing all three targets, combine:
+#   lamp-forge panel \
+#     --set PEDV=results/pedv_N_gene/primer_sets.json \
+#     --set PDCoV=results/pdcov_N_gene/primer_sets.json \
+#     --set RotaA=results/porcine_rota_a/primer_sets.json \
+#     --top-per-target 5 \
+#     --out results/swine_enteric_3plex
+# Then interpret the result with:
+#   lamp-forge swine-enteric-risk --pedv / --pdcov / --rota-a
+#
+# After designing, verify RT-LAMP readiness before ordering:
+#   lamp-forge rt-check --input results/pdcov_N_gene/primer_sets.json --na-type rna
+#
+# References:
+#   Song D et al. (2015) Porcine deltacoronavirus in mainland China. Emerg
+#   Infect Dis 21(12):2254-2255. doi:10.3201/eid2112.150283
+#   Li W et al. (2017) Rapid detection of porcine deltacoronavirus. J Virol
+#   Methods 249:58-62. doi:10.1016/j.jviromet.2017.09.002
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63. doi:10.1093/nar/28.12.e63
+# ============================================================================
+
+target:
+  name: pdcov_N_gene
+  taxon_id: 1542401            # Porcine deltacoronavirus (PDCoV; SeCoV)
+  gene: N                      # nucleocapsid protein; most conserved coding region
+  max_sequences: 30            # span North American + Asian (China, South Korea, Thailand)
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Porcine enteric coronaviruses and host background:
+  #   pedv.fasta                  - Porcine epidemic diarrhea virus (NC_003436.1);
+  #                                 alphacoronavirus, co-circulates in the same niche
+  #   tgev.fasta                  - Transmissible gastroenteritis virus (NC_038861.1);
+  #                                 alphacoronavirus 1, closest porcine coronavirus family
+  #   porcine_rotavirus_a.fasta   - Rotavirus A (VP6 segment, NC_011509.1); co-circulates
+  #                                 in farrowing barns; dsRNA, genetically unrelated
+  #   sus_scrofa_fragment.fasta   - Sus scrofa host DNA from intestinal content / rectal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # TGEV and PEDV share coronavirus family; tight threshold
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25              # RNA virus: narrower window catches constrained blocks
+  entropy_threshold: 0.30     # N gene is moderately conserved across North American
+                               # and Asian PDCoV strains; matches RNA-virus design approach
+  min_region_length: 200       # N CDS is ~798 nt; expect 2-3 conserved windows
+
+primer:
+  tm_min: 63.0                 # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0                 # PDCoV N gene is ~50-55% GC; wide margins for clade diversity
+  gc_max: 60.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/pdcov_N_gene
+  top_n: 10
+  generate_html: true
+  generate_csv: true

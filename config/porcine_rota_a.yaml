@@ -1,0 +1,114 @@
+# LAMP-Forge config: Porcine Rotavirus A VP6 RT-LAMP
+# ============================================================================
+# Target: Broad porcine Rotavirus A detection via the VP6 inner capsid gene
+#
+# Why this target:
+#   Rotavirus A is the most prevalent cause of neonatal diarrhea in piglets
+#   worldwide, with mortality rates of 10-40% in pre-weaned pigs under
+#   two weeks of age.  Porcine Rotavirus A co-circulates with PEDV and PDCoV in
+#   farrowing barns, and dual or triple infections with these enteric pathogens
+#   produce compounded mortality that can approach 100% in neonatal litters.
+#   Rapid on-farm differentiation between Rotavirus A, PEDV, and PDCoV is
+#   critical for selecting the appropriate biosecurity intervention (porcine
+#   rotavirus vaccines are commercially available; PEDV and PDCoV require
+#   separate measures).
+#
+#   Rotavirus A is a double-stranded RNA (dsRNA) virus (family Reoviridae,
+#   genus Rotavirus).  Despite being dsRNA, detection by one-step RT-LAMP is
+#   well established: heat denaturation of the dsRNA before extraction (or
+#   the endogenous denaturation activity of chaotropic lysis buffers) releases
+#   single-stranded RNA template that is efficiently reverse-transcribed by
+#   RTx or WarmStart RTx at 63-65 degC.  One-step RT-LAMP runs in under
+#   30 minutes, fully compatible with BioVind portable platforms.
+#
+#   VP6 rationale:
+#   The VP6 gene (segment 6, ~1356 nt CDS) encodes the inner capsid protein,
+#   the most abundant virion protein and the group A-specific antigen.  VP6 is
+#   the basis of all ELISA kits and the majority of group A RT-PCR and RT-LAMP
+#   assays (Khamrin et al. 2010; Chan et al. 2017) because:
+#
+#   - It is >90% conserved at the nucleotide level across all porcine G and P
+#     genotype combinations (G1-G5, G9, G11; P[6], P[7], P[13]) while diverging
+#     enough from bovine and human Rotavirus A VP6 to support species-specific
+#     detection at moderate identity thresholds.
+#   - VP6 I-subgroup (I) antigens are the diagnostic standard; all commercially
+#     available rotavirus diagnostic kits for livestock detect VP6.
+#   - It is substantially more conserved than VP4 (P-genotype) and VP7 (G-
+#     genotype), which undergo antibody-driven selection and are unsuitable for
+#     broad porcine-inclusive detection assays.
+#
+#   Note on GC content: the Rotavirus A genome is ~40-47% GC.  The VP6 segment
+#   falls in the 40-45% range; gc_min is set to 35% to accommodate the lower
+#   end of primer candidates in AT-rich regions of the porcine genotype cluster.
+#
+# This config is the third channel of the three-target swine neonatal enteric
+# panel alongside PEDV (config/pedv_N_gene.yaml) and PDCoV
+# (config/pdcov_N_gene.yaml).  After designing all three targets, combine:
+#   lamp-forge panel \
+#     --set PEDV=results/pedv_N_gene/primer_sets.json \
+#     --set PDCoV=results/pdcov_N_gene/primer_sets.json \
+#     --set RotaA=results/porcine_rota_a/primer_sets.json \
+#     --top-per-target 5 \
+#     --out results/swine_enteric_3plex
+# Then interpret the result with:
+#   lamp-forge swine-enteric-risk --pedv / --pdcov / --rota-a
+#
+# After designing, verify RT-LAMP readiness before ordering:
+#   lamp-forge rt-check --input results/porcine_rota_a/primer_sets.json --na-type rna
+#
+# References:
+#   Khamrin P et al. (2010) Loop-mediated isothermal amplification for rapid
+#   detection of rotavirus in clinical stool specimens. J Virol Methods
+#   163:384-389. doi:10.1016/j.jviromet.2009.11.013
+#   Chan MC et al. (2017) Rotavirus detection and genotyping by RT-LAMP.
+#   J Med Virol 89:1225-1229. doi:10.1002/jmv.24750
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63. doi:10.1093/nar/28.12.e63
+# ============================================================================
+
+target:
+  name: porcine_rota_a
+  taxon_id: 10359              # Rotavirus A (all genotypes, including porcine strains)
+  gene: VP6                    # inner capsid protein; group A-specific; most conserved
+  max_sequences: 30            # span porcine G genotypes (G1-G5, G9, G11) + P types
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Enteric pathogens that co-circulate with porcine Rotavirus A in farrowing barns
+  # and structurally or phylogenetically related rotaviruses:
+  #   pedv.fasta                  - PEDV (NC_003436.1); alphacoronavirus, co-circulates
+  #   pdcov.fasta                 - PDCoV (deltacoronavirus); co-circulates in same niche
+  #   bovine_rota_a.fasta         - Bovine Rotavirus A (VP6, representative);
+  #                                 closest non-porcine Rotavirus A; ~80% VP6 identity
+  #   human_rota_a.fasta          - Human Rotavirus A (VP6, Wa reference);
+  #                                 ~78-82% VP6 identity; zoonotic risk in pork workers
+  #   sus_scrofa_fragment.fasta   - Sus scrofa host DNA from intestinal content / swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80  # bovine/human Rotavirus A VP6 ~78-82% identity;
+  min_coverage_threshold: 0.80  # 0.80 identity + 0.80 coverage catches meaningful cross-reactivity
+
+conservation:
+  window_size: 25              # VP6 is constrained; 25-nt window resolves conserved blocks
+  entropy_threshold: 0.25     # VP6 is the most conserved Rotavirus A segment; stricter
+                               # than PEDV (0.30) but looser than bacterial housekeeping
+                               # genes (0.20) to accommodate inter-genotype synonymous drift
+  min_region_length: 200       # VP6 CDS is ~1356 nt; expect 3-5 conserved windows
+
+primer:
+  tm_min: 63.0                 # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0;
+                               # required for dsRNA after heat denaturation or chaotropic lysis
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                 # porcine Rotavirus A VP6 is ~40-45% GC; lower margin
+  gc_max: 55.0                 # accommodates AT-rich primer candidates at block boundaries
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/porcine_rota_a
+  top_n: 10
+  generate_html: true
+  generate_csv: true
