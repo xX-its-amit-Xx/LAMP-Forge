@@ -3277,5 +3277,179 @@ def swine_enteric_risk(
         click.echo(f"CSV summary written to {out_csv}")
 
 
+@cli.command(name="swine-enteric-trend")
+@click.option(
+    "--enteric-result",
+    "enteric_result_paths",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    metavar="PATH",
+    help=(
+        "JSON file produced by 'lamp-forge swine-enteric-risk --out-json' for one "
+        "monitoring interval. Repeat once per sample in chronological order (oldest "
+        "first). Mutually exclusive with --csv."
+    ),
+)
+@click.option(
+    "--csv",
+    "csv_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Monitoring-spreadsheet CSV with columns: sample_id, date (optional), "
+        "pedv, pdcov, rota_a. Rows must be in chronological order "
+        "(oldest first). Mutually exclusive with --enteric-result."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full trend assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the chronological pathogen-flag timeline to a CSV file.",
+)
+def swine_enteric_trend(
+    enteric_result_paths: tuple[Path, ...],
+    csv_path: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Analyse enteric outbreak trajectory across consecutive swine neonatal LAMP panel results.
+
+    Takes a chronological sequence of swine neonatal enteric LAMP panel results and
+    produces a trend assessment: EMERGING, STABLE_CLEAR, STABLE_ENDEMIC,
+    RESOLVING, or INSUFFICIENT_DATA.
+
+    Key events detected:
+
+    \b
+      - PEDV newly detected -- near-100% neonatal mortality; barn lockdown required
+      - PEDV cleared -- confirm with RT-PCR before relaxing controls
+      - Overall pathogen burden trend across the monitoring period
+
+    Input (pick one):
+
+    \b
+      --enteric-result FILE   JSON from 'lamp-forge swine-enteric-risk --out-json',
+                              repeated once per monitoring interval, oldest first.
+      --csv FILE              Monitoring-spreadsheet CSV (header required):
+                                sample_id, date (opt), pedv, pdcov, rota_a
+
+    \b
+    Example -- three-month PEDV outbreak track in a farrowing barn:
+        lamp-forge swine-enteric-trend \\
+          --enteric-result results/barn-A/2026-01.json \\
+          --enteric-result results/barn-A/2026-02.json \\
+          --enteric-result results/barn-A/2026-03.json \\
+          --out-json results/barn-A/trend_Q1.json
+
+    \b
+    Example -- from a monitoring-spreadsheet CSV:
+        lamp-forge swine-enteric-trend \\
+          --csv monitoring/barn_A_2026.csv \\
+          --out-json results/barn-A/trend_2026.json
+    """
+    from lamp_forge.swine_enteric_risk import assess_swine_enteric_risk as _assess
+    from lamp_forge.swine_enteric_trend import (
+        analyse_swine_enteric_trend,
+        records_from_csv,
+        records_from_enteric_json,
+        write_trend_csv,
+        write_trend_json,
+    )
+
+    if csv_path is not None and enteric_result_paths:
+        click.secho(
+            "--csv and --enteric-result are mutually exclusive. Use one or the other.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+    if csv_path is None and not enteric_result_paths:
+        click.secho(
+            "Provide input via --enteric-result (one or more JSON files) or --csv.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+
+    try:
+        if csv_path is not None:
+            records = records_from_csv(csv_path)
+        else:
+            records = records_from_enteric_json(list(enteric_result_paths))
+    except (ValueError, OSError) as exc:
+        click.secho(f"Input error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        trend = analyse_swine_enteric_trend(records)
+    except ValueError as exc:
+        click.secho(f"Analysis error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    direction_colour = {
+        "EMERGING": "red",
+        "STABLE_CLEAR": "green",
+        "STABLE_ENDEMIC": "yellow",
+        "RESOLVING": "green",
+        "INSUFFICIENT_DATA": "yellow",
+    }
+    col = direction_colour.get(trend.direction.value, "white")
+    click.echo(f"Swine neonatal enteric trajectory: {trend.n_samples} sample(s)")
+    click.echo("")
+
+    col_id = max((len(r.sample_id) for r in trend.records), default=10)
+    col_id = max(col_id, 9)
+    header = f"{'Sample ID':<{col_id}}  {'Date':<12}  {'PEDV':>5} {'PDCoV':>5} {'RotaA':>5}  Alert"
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for r in trend.records:
+        lvl = _assess(r.flags).alert_level.value
+        date_str = (r.date or "")[:12]
+        click.echo(
+            f"{r.sample_id:<{col_id}}  {date_str:<12}  "
+            f"{'[+]' if r.flags.pedv else '[-]':>5} "
+            f"{'[+]' if r.flags.pdcov else '[-]':>5} "
+            f"{'[+]' if r.flags.rota_a else '[-]':>5}  {lvl}"
+        )
+    click.echo("")
+
+    click.secho(f"Trend direction: {trend.direction.value}", fg=col)
+
+    if trend.pedv_newly_detected:
+        click.secho(
+            "  PEDV NEWLY DETECTED: near-100% neonatal mortality -- initiate barn "
+            "lockdown and quarantine all affected pens immediately.",
+            fg="red",
+            bold=True,
+        )
+    if trend.pedv_cleared:
+        click.secho(
+            "  PEDV cleared: confirm with RT-PCR before relaxing biosecurity controls.",
+            fg="green",
+        )
+    click.echo(f"  Worst alert level: {trend.worst_alert_level.value}")
+    click.echo("")
+    click.echo(f"Interpretation: {trend.interpretation}")
+    click.echo("")
+    click.echo(f"Recommended action: {trend.recommended_action}")
+
+    if out_json is not None:
+        write_trend_json(trend, out_json)
+        click.echo(f"\nTrend assessment written to {out_json}")
+    if out_csv is not None:
+        write_trend_csv(trend, out_csv)
+        click.echo(f"Timeline CSV written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
