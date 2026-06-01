@@ -3158,6 +3158,165 @@ def bov_trend(
         click.echo(f"Timeline CSV written to {out_csv}")
 
 
+@cli.command(name="brucella-risk")
+@click.option(
+    "--is711/--no-is711",
+    "is711_positive",
+    default=False,
+    help="IS711 LAMP assay result (positive / negative).",
+)
+@click.option(
+    "--context",
+    "context",
+    type=click.Choice(
+        ["cattle", "small_ruminant", "swine", "human", "environmental"],
+        case_sensitive=False,
+    ),
+    default="cattle",
+    show_default=True,
+    help=(
+        "Sample context for species-level interpretation. "
+        "cattle=B.abortus, small_ruminant=B.melitensis, swine=B.suis, "
+        "human=human brucellosis POC, environmental=fomite/water/soil."
+    ),
+)
+@click.option(
+    "--input-json",
+    "input_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Read flags from a JSON file instead of CLI options. "
+        "Expected keys: is711_positive (bool), context (str). "
+        "Missing keys use defaults."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary to a file.",
+)
+def brucella_risk(
+    is711_positive: bool,
+    context: str,
+    input_json: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Interpret a Brucella IS711 LAMP result as a structured alert.
+
+    IS711 is a pan-Brucella insertion sequence (5-40 copies per genome) that
+    enables genus-level detection of all nine Brucella species with exceptional
+    analytical sensitivity.  The alert level depends on the sample context:
+    livestock samples trigger WOAH-notifiable HIGH alerts; a human sample
+    triggers a CRITICAL public-health alert; an environmental positive triggers
+    a LOW alert requiring follow-up animal testing.
+
+    \b
+    Alert levels:
+        CRITICAL  -- IS711+ in a human sample (notifiable zoonosis; treat immediately)
+        HIGH      -- IS711+ in cattle, small ruminant, or swine (WOAH-listed; quarantine)
+        LOW       -- IS711+ in an environmental sample (follow-up animal testing required)
+        NEGATIVE  -- IS711 negative (Brucella not detected)
+
+    \b
+    Example -- positive cattle blood sample:
+        lamp-forge brucella-risk --is711 --context cattle
+
+    \b
+    Example -- positive human POC sample:
+        lamp-forge brucella-risk --is711 --context human
+
+    \b
+    Example -- read flags from JSON and write outputs:
+        lamp-forge brucella-risk --input-json results/brucella_flags.json \
+          --out-json results/brucella_assessment.json \
+          --out-csv results/brucella_assessment.csv
+    """
+    import json as json_mod
+
+    from lamp_forge.brucella_risk import (
+        BrucellaAlertLevel,
+        BrucellaContext,
+        BrucellaFlags,
+        assess_brucella_risk,
+        flags_from_dict,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    if input_json is not None:
+        with input_json.open(encoding="utf-8") as fh:
+            raw: dict[str, object] = json_mod.load(fh)
+        flags = flags_from_dict(raw)
+    else:
+        flags = BrucellaFlags(
+            is711_positive=is711_positive,
+            context=BrucellaContext(context.lower()),
+        )
+
+    assessment = assess_brucella_risk(flags)
+
+    # --- Result table ---------------------------------------------------------
+    click.echo("Brucella IS711 LAMP result:")
+    symbol = "+" if assessment.flags.is711_positive else "-"
+    click.echo(f"  IS711  (pan-Brucella)  [{symbol}]")
+    click.echo(f"  Context: {assessment.flags.context.value}")
+    click.echo("")
+
+    # --- Alert level (colour-coded) ------------------------------------------
+    level_color: dict[BrucellaAlertLevel, str] = {
+        BrucellaAlertLevel.CRITICAL: "red",
+        BrucellaAlertLevel.HIGH: "red",
+        BrucellaAlertLevel.LOW: "yellow",
+        BrucellaAlertLevel.NEGATIVE: "green",
+    }
+    color = level_color[assessment.alert_level]
+    click.secho(
+        f"Alert level : {assessment.alert_level.value}  (score {assessment.alert_score}/100)",
+        fg=color,
+        bold=(assessment.alert_level in (BrucellaAlertLevel.CRITICAL, BrucellaAlertLevel.HIGH)),
+    )
+
+    if assessment.immediate_report_required:
+        click.secho(
+            "  IMMEDIATE REPORT REQUIRED: notify the national veterinary or public "
+            "health authority today.",
+            fg="red",
+            bold=True,
+        )
+
+    if assessment.notifiable:
+        click.secho(
+            f"  NOTIFIABLE: zoonotic_risk={assessment.zoonotic_risk}",
+            fg="yellow",
+        )
+
+    click.echo("")
+    click.echo("Interpretation:")
+    click.echo(f"  {assessment.interpretation}")
+    click.echo("")
+    click.echo("Recommended action:")
+    click.echo(f"  {assessment.recommended_action}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
 @cli.command(name="swine-enteric-risk")
 @click.option(
     "--pedv",
