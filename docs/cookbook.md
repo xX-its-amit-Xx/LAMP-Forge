@@ -4166,3 +4166,182 @@ underlying primer sets or a different set.
   doi:10.2144/0000113902
 - New England Biolabs.  WarmStart(R) LAMP Kit (DNA & RNA) instruction
   manual, E1700.  2024.
+
+---
+
+## Recipe 29 -- Classical Swine Fever Virus (CSFV) via RT-LAMP (on-farm / checkpoint biosecurity)
+
+**Goal.** Detect Classical Swine Fever Virus (CSFV; also called hog cholera or
+European swine fever) broadly across all three genotype groups (1, 2, 3) from
+whole blood, serum, or tonsil swab on the farm or at a border checkpoint -- fast
+enough to support a quarantine decision before pigs move.
+
+**Why it's interesting.** CSFV is a WOAH-listed Tier 1 notifiable disease with
+near-100% case fatality in naive herds.  The disease is eradicated from North
+America, the EU, and most of Oceania, but it remains endemic in parts of Asia,
+Central America, and sub-Saharan Africa.  Critically, CSFV produces a clinical
+picture that is **nearly identical to African Swine Fever Virus (ASFV)**: acute
+fever, hemorrhagic diathesis, and rapid spread.  A BioVind portable device that
+runs CSFV (Recipe 29) and ASFV (Recipe 7) in the same panel resolves this
+differential on-farm in under 60 minutes -- the fastest route to a quarantine
+or trade-restriction decision when both diseases are differential diagnoses.
+
+CSFV has three genotype groups (1, 2, 3) with nine subtypes.  Subtype 2.1 accounts
+for the majority of contemporary outbreaks in East and Southeast Asia.  A pan-CSFV
+assay must capture all three genotype groups, so the primer design needs a diverse,
+genotype-spanning input set.
+
+CSFV is a **positive-sense ssRNA** virus (*Flaviviridae*, Genus *Pestivirus A*),
+so detection requires **RT-LAMP**.  One-step RT-LAMP (Bst 2.0 WarmStart + NEB RTx)
+at 63-65 degC delivers a yes/no result in under 30 minutes, compatible with the
+BioVind-style portable platform.
+
+**Target.** `NS5B` (RNA-directed RNA polymerase, ~1.8 kb) -- the most conserved
+ORF across all CSFV genotypes and the target used in published CSFV RT-PCR and
+RT-LAMP assays (Wang et al. 2018; Rodriguez-Prieto et al. 2017).  The alternative
+E2 glycoprotein gene is more subtype-variable and better suited to
+subtype-discriminating assays outside the scope of a first-pass pan-CSFV screen.
+
+Use the ready-made config at `config/csfv_NS5B.yaml`, or paste the block below:
+
+```yaml
+target:
+  name: csfv_NS5B
+  taxon_id: 11096          # Classical swine fever virus (Pestivirus A)
+  gene: NS5B               # RNA polymerase; alt annotation: "NS5b" / "p58" / "RdRp"
+  max_sequences: 35        # span genotype groups 1/2/3 + major subtypes
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- BVDV shares pestivirus NS5B family
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.30        # RdRp catalytic constraint; looser than housekeeping genes
+  min_region_length: 200
+
+primer:
+  tm_min: 63.0                   # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 43.0                   # CSFV NS5B ~51-55% GC; margins for subtype diversity
+  gc_max: 62.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/csfv_NS5B
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config note.** `primer.tm_min: 63.0` -- one-step RT-LAMP at 63-65 degC;
+same rationale as Recipes 11 (PRRSV), 12 (AIV), 14 (FMDV), and 18 (NDV).
+`conservation.entropy_threshold: 0.30` is slightly looser than for bacterial
+housekeeping genes (0.20 bits) -- RNA-virus synonymous drift is higher.
+
+**SPECIFICITY CHALLENGE: BVDV.** CSFV is a pestivirus closely related to Bovine
+Viral Diarrhea Virus (BVDV, Pestivirus B), which is endemic in cattle worldwide
+and can be present on mixed cattle/pig farms.  The CSFV and BVDV NS5B genes share
+~50-60% nucleotide identity -- high enough that a loosely designed assay will
+cross-react.  `min_identity_threshold: 0.85` and inclusion of BVDV in the off-target
+panel are **essential** for any CSFV assay intended for field deployment on
+mixed-species farms.
+
+**Off-target panel.** The key differentials are other pestiviruses and co-circulating
+swine pathogens:
+
+| File | Source | Why |
+|---|---|---|
+| `bvdv.fasta` | NC_001461.1 (BVDV-1) + NC_002539.1 (BVDV-2) | **Most important off-target** -- closest pestivirus relative; endemic in cattle on mixed farms |
+| `bdv.fasta` | NC_003679.1 | Border disease virus (Pestivirus D); sheep pestivirus in the same genus |
+| `prrsv.fasta` | PRRS virus *(representative)* | Co-circulates in pigs; RNA arterivirus |
+| `asfv_p72.fasta` | NC_001659.1 region | ASFV (DNA Asfarviridae); primary clinical differential -- a DNA virus; must not cross-flag |
+| `sus_scrofa_fragment.fasta` | Subset of *Sus scrofa* genome | Host DNA from pig blood or tissue |
+
+**Expected output.** NS5B yields several broadly-conserved RdRp-motif windows.
+Top sets should have zero flagged hits across the panel, including BVDV -- if BVDV
+hits appear, raise `min_identity_threshold` to 0.90 and restrict to windows in the
+most conserved catalytic core (GDD motif region).  Because ASFV is a large DNA virus
+genetically unrelated to CSFV, there should be no cross-reactivity with ASFV.
+
+**Verify RT-LAMP readiness.**
+
+```bash
+lamp-forge rt-check \
+  --input results/csfv_NS5B/primer_sets.json \
+  --na-type rna \
+  --out-csv results/csfv_NS5B/rt_check.csv
+```
+
+Sets marked **NOT OPTIMIZED** have at least one core primer below 63.0 degC.
+Because `primer.tm_min: 63.0` is already set in this config, suboptimal sets
+are unusual -- but verify before ordering.
+
+**Estimate LOD before ordering** (whole blood 200 uL, 50% RNA extraction,
+50 uL eluate, 5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 200 \
+  --efficiency 0.50 \
+  --eluate-volume 50 \
+  --reaction-input 5
+```
+
+Effective sample = 200 x 0.5 x (5/50) = 10 uL per reaction -> LOD_95 approx
+300 copies/mL of whole blood.  CSFV viral loads in blood during the acute febrile
+phase can reach 10^6-10^8 TCID50/mL, providing orders-of-magnitude headroom for
+detection before clinical signs peak.
+
+**Multiplex CSFV with other swine biosecurity targets** to resolve the
+ASFV/CSFV clinical overlap and complete a swine differential panel:
+
+```bash
+lamp-forge panel \
+  --set CSFV=results/csfv_NS5B/primer_sets.json \
+  --set ASFV=results/asfv_p72/primer_sets.json \
+  --set PRRSV=results/prrsv_ORF7/primer_sets.json \
+  --top-per-target 5 \
+  --out results/swine_biosecurity_3plex
+```
+
+Then generate the pooling sheet and export for ordering:
+
+```bash
+lamp-forge pool \
+  --panel results/swine_biosecurity_3plex/panel.json \
+  --stock-conc 200 \
+  --total-volume 500 \
+  --out results/swine_biosecurity_3plex/pool_sheet.csv
+
+lamp-forge export \
+  --input results/csfv_NS5B/primer_sets.json \
+  --format idt \
+  --target-label CSFV_NS5B \
+  --out orders/csfv_NS5B_idt_order.csv
+```
+
+**Field note.** CSFV is a WOAH-listed Tier 1 notifiable disease.  A positive
+result must trigger **immediate notification to the national veterinary authority**
+and confirmatory testing at an approved reference laboratory before any depopulation
+or trade-restriction decisions.  Position this assay as a **triage/screening** tool.
+Wet-lab validation must be performed at an approved facility using inactivated
+positive controls or synthetic RNA standards.
+
+**References.**
+
+- Wang A, Cai X, Chen H et al. (2018) Rapid and sensitive detection of classical
+  swine fever virus by reverse transcription loop-mediated isothermal amplification.
+  *Vet Microbiol* 216:66-71. doi:10.1016/j.vetmic.2018.02.003
+- Rodriguez-Prieto V, Vicente-Rubiano M, Sanchez-Matamoros A et al. (2017)
+  Real-time and conventional RT-LAMP for detection of classical swine fever virus.
+  *J Virol Methods* 250:7-12. doi:10.1016/j.jviromet.2017.09.014
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

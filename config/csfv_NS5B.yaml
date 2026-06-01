@@ -1,0 +1,94 @@
+# LAMP-Forge config: Classical Swine Fever Virus (CSFV) NS5B RT-LAMP
+# ============================================================================
+# Target: Broad CSFV detection via the NS5B (RNA-dependent RNA polymerase) gene
+# Why this target: Classical Swine Fever Virus (CSFV; also known as hog cholera)
+# is one of the most economically devastating swine diseases worldwide and a
+# WOAH-listed Tier 1 notifiable pathogen.  Velogenic strains cause near-100%
+# case fatality in naive herds; the disease is eradicated from North America,
+# the EU, and most of Oceania, but remains endemic in parts of Asia, Central
+# America, and Africa.  A positive CSFV result triggers immediate herd
+# quarantine and notification to the national veterinary authority.
+#
+# CSFV presents clinically very similarly to African Swine Fever Virus (ASFV):
+# fever, hemorrhage, high mortality, and rapid spread.  A BioVind-style portable
+# panel running both ASFV (Recipe 7) and CSFV in parallel resolves this clinical
+# overlap on-farm in under 60 minutes -- the fastest route to a quarantine or
+# trade-restriction decision.
+#
+# Target gene: NS5B (~1.8 kb), which encodes the RNA-directed RNA polymerase
+# (RdRp), the most conserved ORF across all three CSFV genotype groups (1, 2, 3)
+# and their subtypes (1.1, 1.2, 1.3, 2.1, 2.2, 2.3, 3.1-3.4).  NS5B is the
+# target of choice in published CSFV RT-PCR and RT-LAMP assays (Wang et al.
+# 2018 Vet Microbiol; Rodriguez-Prieto et al. 2017 J Virol Methods).  The
+# alternative E2 glycoprotein gene is more variable across subtypes and better
+# suited to subtype-discriminating assays, which is outside the scope of a
+# first-pass pan-CSFV detection screen.
+#
+# CSFV is a positive-sense ssRNA virus (Flaviviridae, Genus Pestivirus A;
+# formerly Pestivirus 1) -- detection requires RT-LAMP.  One-step RT-LAMP
+# (Bst 2.0 WarmStart + NEB RTx or WarmStart RTx) at 63-65 degC delivers a
+# yes/no result in under 30 minutes, fully compatible with BioVind portable
+# platforms and the existing farm biosecurity ASFV/PRRSV/AIV/NDV panel.
+#
+# SPECIFICITY CHALLENGE: CSFV is a pestivirus closely related to Bovine Viral
+# Diarrhea Virus (BVDV, Pestivirus B) and Border Disease Virus (BDV, Pestivirus
+# D).  The CSFV and BVDV NS5B genes share ~50-60% nucleotide identity.  BVDV
+# is endemic in cattle and can be present in mixed cattle/pig farms; the
+# off-target panel must include BVDV to confirm the assay does not cross-react.
+#
+# After designing, verify RT-LAMP readiness before ordering:
+#   lamp-forge rt-check --input results/csfv_NS5B/primer_sets.json --na-type rna
+#
+# Multiplex with other farm-biosecurity targets:
+#   lamp-forge panel \
+#     --set CSFV=results/csfv_NS5B/primer_sets.json \
+#     --set ASFV=results/asfv_p72/primer_sets.json \
+#     --set PRRSV=results/prrsv_ORF7/primer_sets.json \
+#     --top-per-target 5 \
+#     --out results/swine_biosecurity_3plex
+# ============================================================================
+
+target:
+  name: csfv_NS5B
+  taxon_id: 11096              # Classical swine fever virus (Pestivirus A)
+  gene: NS5B                   # RNA polymerase; alt: "NS5b", "p58", "RdRp"
+  max_sequences: 35            # span genotype groups 1/2/3 + major subtypes
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Key pestiviruses and co-circulating swine pathogens:
+  #   bvdv.fasta                - Bovine viral diarrhea virus (Pestivirus B/D);
+  #                               CLOSEST RELATIVE -- shares ~50-60% NS5B nt identity;
+  #                               endemic in cattle on mixed farms
+  #   bdv.fasta                 - Border disease virus (Pestivirus D); sheep pestivirus
+  #   prrsv.fasta               - PRRS virus; co-circulates in pigs (RNA, Arterivirus)
+  #   asfv_p72.fasta            - ASFV (DNA Asfarviridae); most important clinical
+  #                               differential for CSFV -- must not cross-flag
+  #   sus_scrofa_fragment.fasta - Sus scrofa host DNA from blood or tissue
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # tight -- BVDV shares pestivirus NS5B family
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25              # RNA virus: narrower window catches constrained RdRp blocks
+  entropy_threshold: 0.30     # NS5B is under RdRp catalytic constraint but still shows
+                               # synonymous RNA-virus drift; looser than housekeeping genes
+  min_region_length: 200       # NS5B is ~1.8 kb -- expect 3-6 conserved windows
+
+primer:
+  tm_min: 63.0                 # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 43.0                 # CSFV NS5B is ~51-55% GC; margins for subtype diversity
+  gc_max: 62.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/csfv_NS5B
+  top_n: 10
+  generate_html: true
+  generate_csv: true
