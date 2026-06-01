@@ -4008,7 +4008,7 @@ your CI can gate on.
 
 ### Cartridge manifest
 
-`config/cartridge_respiratory_18ch.yaml` describes an 18-channel respiratory
+`config/cartridges/cartridge_respiratory_18ch.yaml` describes an 18-channel respiratory
 panel (17 detect channels + a 16S rRNA sample-adequacy control):
 
 ```yaml
@@ -4054,7 +4054,7 @@ manifest file's directory, so a manifest in `config/` referring to
 ### One-shot build
 
 ```bash
-lamp-forge cartridge config/cartridge_respiratory_18ch.yaml \
+lamp-forge cartridge config/cartridges/cartridge_respiratory_18ch.yaml \
   --out-dir results/resp_18ch_v1
 ```
 
@@ -4132,7 +4132,7 @@ vendor portal:
 # .github/workflows/preorder.yml (excerpt)
 - name: Build cartridge
   run: |
-    lamp-forge cartridge config/cartridge_respiratory_18ch.yaml \
+    lamp-forge cartridge config/cartridges/cartridge_respiratory_18ch.yaml \
       --out-dir results/resp_18ch_v1
 - name: Upload vendor CSV
   if: success()
