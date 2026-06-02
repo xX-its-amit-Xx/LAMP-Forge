@@ -5130,3 +5130,181 @@ lamp-forge cartridge \
   World Health Organization, Geneva.
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 33 -- Neonatal calf diarrhea outbreak trajectory (`lamp-forge bov-enteric-trend`)
+
+**Goal.** Convert a weekly LAMP monitoring series for a calf group into a
+trend assessment -- EMERGING, RESOLVING, STABLE_CLEAR, or STABLE_ENDEMIC --
+with automatic detection of ETEC K99 new-onset events (IV-antibiotic emergency)
+and Salmonella persistence (zoonotic herd-investigation trigger).
+
+**Why it matters for BioVind.**
+Neonatal calf diarrhea (scours) is the leading cause of calf mortality
+globally.  A single LAMP result answers "what pathogen is present now?"; the
+trend answers "is this getting better or worse?" and surfaces two
+time-critical events that change the veterinary response:
+
+1. **ETEC K99 newly detected** -- near-certain mortality in calves <4 days
+   old without IV antibiotics within 2 h.  No other pathogen in the panel
+   has this time-pressure, and a first detection after clean intervals is
+   the highest-urgency escalation in neonatal medicine.
+2. **Salmonella persistent** -- positive in every monitored interval suggests
+   a herd-level contamination source or a chronic shedder; culture and herd
+   investigation are required.
+
+The trend command also reports:
+
+- **Zoonotic risk count** -- intervals where Salmonella or Cryptosporidium
+  is positive (both are notifiable food-safety pathogens).
+- **Antibiotic required count** -- intervals where ETEC K99 or Salmonella
+  is detected (the only two targets in the panel that require antimicrobial
+  therapy; prevents overuse in viral/parasitic scours).
+- **Worst alert level** across the monitoring series.
+
+**Panel targets (same as `lamp-forge bov-enteric-risk`).**
+
+| Target     | Gene      | Pathogen                        | Alert if sole positive |
+|---|---|---|---|
+| ETEC_K99   | faeG      | ETEC K99/F5 enterotoxigenic E. coli | CRITICAL |
+| Salmonella | invA      | Salmonella sp. (any serovar)    | HIGH |
+| Crypto     | 18S/hsp70 | Cryptosporidium parvum          | MODERATE |
+| BCoV       | N gene    | Bovine coronavirus (enteric)    | MODERATE |
+| RotaA      | VP6       | Bovine rotavirus A              | LOW |
+
+**Typical workflow (JSON inputs).**
+
+```bash
+# Week 1 -- rotavirus only
+lamp-forge bov-enteric-risk --rota-a \
+  --out-json results/calf-grp-1/week-01.json
+
+# Week 2 -- rotavirus + coronavirus
+lamp-forge bov-enteric-risk --rota-a --bcov \
+  --out-json results/calf-grp-1/week-02.json
+
+# Week 3 -- ETEC K99 onset (outbreak event)
+lamp-forge bov-enteric-risk --etec-k99 --rota-a \
+  --out-json results/calf-grp-1/week-03.json
+
+# Trend analysis across the three weeks
+lamp-forge bov-enteric-trend \
+  --enteric-result results/calf-grp-1/week-01.json \
+  --enteric-result results/calf-grp-1/week-02.json \
+  --enteric-result results/calf-grp-1/week-03.json \
+  --out-json results/calf-grp-1/trend_wk1-3.json
+```
+
+Expected output:
+
+```
+Bovine neonatal enteric trajectory: 3 sample(s)
+
+Sample ID    Date          ETEC  SALM  CRPT  BCOV  ROTA  Alert
+-----------------------------------------------------------------
+week-01                     [-]   [-]   [-]   [-]   [+]  LOW
+week-02                     [-]   [-]   [-]   [+]   [+]  MODERATE
+week-03                     [+]   [-]   [-]   [+]   [+]  CRITICAL
+
+Trend direction: EMERGING
+  ETEC K99 NEWLY DETECTED: IV antibiotic therapy required within 2 h; ...
+  Worst alert level: CRITICAL
+
+Interpretation: ETEC K99 (faeG) newly detected in the most recent sample
+  after 2 consecutive negative interval(s). ETEC K99 causes near-certain
+  mortality (>90%) in calves <4 days old without IV antibiotic therapy ...
+
+Recommended action: CRITICAL: Start IV or oral electrolyte rehydration
+  immediately. Administer IV antibiotics (ampicillin or amoxicillin-
+  clavulanate) within 2 h of diagnosis -- do NOT wait for sensitivity
+  results. Isolate affected calves. Sanitise pens ...
+```
+
+**Typical workflow (CSV input -- monitoring spreadsheet).**
+
+The CSV route ingests a monitoring spreadsheet directly.
+Column order is flexible; only the header names matter.
+
+```
+sample_id,date,etec_k99,salmonella,crypto,bcov,rota_a
+CG1-week01,2026-01-07,0,0,0,0,1
+CG1-week02,2026-01-14,0,0,0,1,1
+CG1-week03,2026-01-21,1,0,0,1,1
+CG1-week04,2026-01-28,0,0,0,0,1
+CG1-week05,2026-02-04,0,0,0,0,0
+```
+
+```bash
+lamp-forge bov-enteric-trend \
+  --csv monitoring/calf_grp1_2026.csv \
+  --out-json results/calf-grp-1/trend_2026.json \
+  --out-csv  results/calf-grp-1/timeline_2026.csv
+```
+
+**Scenario: Salmonella persistent (zoonotic herd investigation).**
+
+If Salmonella is positive at every monitoring interval, the trend command
+raises a SALMONELLA PERSISTENT flag alongside the STABLE_ENDEMIC direction.
+This pattern suggests either a herd-level environmental contamination source
+(contaminated water trough, feed supply) or a persistently shedding animal
+in the group.
+
+```bash
+# Build three Salmonella-positive JSON files programmatically
+for w in 01 02 03; do
+  lamp-forge bov-enteric-risk --salmonella \
+    --out-json results/calf-grp-2/week-${w}.json
+done
+
+lamp-forge bov-enteric-trend \
+  --enteric-result results/calf-grp-2/week-01.json \
+  --enteric-result results/calf-grp-2/week-02.json \
+  --enteric-result results/calf-grp-2/week-03.json
+```
+
+Expected key lines in the output:
+
+```
+Trend direction: STABLE_ENDEMIC
+  SALMONELLA PERSISTENT: detected in every interval -- herd-level
+    contamination or chronic shedder suspected; submit for culture and
+    herd investigation.
+  Zoonotic risk in 3 interval(s) (Salmonella and/or Cryptosporidium):
+    enforce gloves and handwashing.
+  Antibiotics indicated in 3 interval(s) (ETEC K99 and/or Salmonella).
+```
+
+**Output files.**
+
+| File | Content |
+|---|---|
+| `--out-json` | Full trend assessment JSON (direction, event flags, interpretation, timeline) |
+| `--out-csv` | Chronological timeline with per-pathogen 0/1 columns and per-sample alert level |
+
+**Integration with the BioID multiplex panel.**
+
+The BioID device's five-channel enteric panel maps directly to the five
+targets above.  After each cartridge result, export the positivity flags to
+a JSON file with `lamp-forge bov-enteric-risk --out-json` (flags can also be
+set via `--input-json` from an upstream data integration), then feed the
+JSON files into `lamp-forge bov-enteric-trend` to build the surveillance
+timeline.
+
+For whole-herd integration, see Recipe 28 (`lamp-forge cartridge`) which
+packages all design artefacts into a single cartridge manifest ready for
+the BioID instrument build.
+
+**References.**
+
+- Cho Y & Yoon K (2014) An overview of calf diarrhea -- infectious
+  etiology, diagnosis, and intervention.  *J Vet Sci* 15(1):1-17.
+  doi:10.4142/jvs.2014.15.1.1
+- Gulliksen SM et al. (2009) Enteropathogens and risk factors for
+  diarrhea in Norwegian dairy calves.
+  *J Dairy Sci* 92(10):5057-5066. doi:10.3168/jds.2009-2080
+- Smith DR (2012) Field diseases of beef calves in the first 45 days of
+  life: enteric and respiratory diseases.
+  *Vet Clin Food Anim* 28(1):57-82. doi:10.1016/j.cvfa.2012.01.001
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

@@ -4822,5 +4822,209 @@ def bov_enteric_risk(
         click.echo(f"CSV summary written to {out_csv}")
 
 
+@cli.command(name="bov-enteric-trend")
+@click.option(
+    "--enteric-result",
+    "enteric_result_paths",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    metavar="PATH",
+    help=(
+        "JSON file produced by 'lamp-forge bov-enteric-risk --out-json' for one monitoring "
+        "interval. Repeat once per sample in chronological order (oldest first). "
+        "Mutually exclusive with --csv."
+    ),
+)
+@click.option(
+    "--csv",
+    "csv_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Monitoring-spreadsheet CSV with columns: sample_id, date (optional), "
+        "etec_k99, salmonella, crypto, bcov, rota_a. Rows must be in chronological "
+        "order (oldest first). Mutually exclusive with --enteric-result."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full trend assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the chronological pathogen-flag timeline to a CSV file.",
+)
+def bov_enteric_trend(
+    enteric_result_paths: tuple[Path, ...],
+    csv_path: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Analyse neonatal calf diarrhea trajectory across consecutive enteric LAMP panel results.
+
+    Takes a chronological sequence of bovine neonatal enteric LAMP panel results and
+    produces a trend assessment: EMERGING, STABLE_CLEAR, STABLE_ENDEMIC,
+    RESOLVING, or INSUFFICIENT_DATA.
+
+    Key events detected:
+
+    \b
+      - ETEC K99 newly detected -- IV antibiotic therapy required within 2 h;
+        near-certain mortality in calves <4 days old without treatment
+      - ETEC K99 cleared -- current treatment is working; maintain hygiene
+      - Salmonella persistent (positive in every interval) -- herd-level
+        contamination or chronic shedder suspected; culture and investigation
+      - Zoonotic risk count (Salmonella / Cryptosporidium intervals)
+
+    Input (pick one):
+
+    \b
+      --enteric-result FILE   JSON from 'lamp-forge bov-enteric-risk --out-json',
+                              repeated once per monitoring interval, oldest first.
+      --csv FILE              Monitoring-spreadsheet CSV (header required):
+                                sample_id, date (opt), etec_k99, salmonella,
+                                crypto, bcov, rota_a
+
+    \b
+    Example -- three-week neonatal scours track on a dairy herd:
+        lamp-forge bov-enteric-trend \
+          --enteric-result results/calf-grp-1/week-01.json \
+          --enteric-result results/calf-grp-1/week-02.json \
+          --enteric-result results/calf-grp-1/week-03.json \
+          --out-json results/calf-grp-1/trend_wk1-3.json
+
+    \b
+    Example -- from a monitoring-spreadsheet CSV:
+        lamp-forge bov-enteric-trend \
+          --csv monitoring/calf_grp1_2026.csv \
+          --out-json results/calf-grp-1/trend_2026.json
+    """
+    from lamp_forge.bov_enteric_risk import assess_bov_enteric_risk as _assess_enteric
+    from lamp_forge.bov_enteric_trend import (
+        analyse_bov_enteric_trend,
+        records_from_csv,
+        records_from_enteric_json,
+        write_trend_csv,
+        write_trend_json,
+    )
+
+    if csv_path is not None and enteric_result_paths:
+        click.secho(
+            "--csv and --enteric-result are mutually exclusive. Use one or the other.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+    if csv_path is None and not enteric_result_paths:
+        click.secho(
+            "Provide input via --enteric-result (one or more JSON files) or --csv.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+
+    try:
+        if csv_path is not None:
+            records = records_from_csv(csv_path)
+        else:
+            records = records_from_enteric_json(list(enteric_result_paths))
+    except (ValueError, OSError) as exc:
+        click.secho(f"Input error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        trend = analyse_bov_enteric_trend(records)
+    except ValueError as exc:
+        click.secho(f"Analysis error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    direction_colour = {
+        "EMERGING": "red",
+        "STABLE_CLEAR": "green",
+        "STABLE_ENDEMIC": "yellow",
+        "RESOLVING": "green",
+        "INSUFFICIENT_DATA": "yellow",
+    }
+    col = direction_colour.get(trend.direction.value, "white")
+    click.echo(f"Bovine neonatal enteric trajectory: {trend.n_samples} sample(s)")
+    click.echo("")
+
+    col_id = max((len(r.sample_id) for r in trend.records), default=10)
+    col_id = max(col_id, 9)
+    header = (
+        f"{'Sample ID':<{col_id}}  {'Date':<12}  "
+        f"{'ETEC':>5} {'SALM':>5} {'CRPT':>5} {'BCOV':>5} {'ROTA':>5}  Alert"
+    )
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for r in trend.records:
+        lvl = _assess_enteric(r.flags).alert_level.value
+        date_str = (r.date or "")[:12]
+        click.echo(
+            f"{r.sample_id:<{col_id}}  {date_str:<12}  "
+            f"{'[+]' if r.flags.etec_k99 else '[-]':>5} "
+            f"{'[+]' if r.flags.salmonella else '[-]':>5} "
+            f"{'[+]' if r.flags.crypto else '[-]':>5} "
+            f"{'[+]' if r.flags.bcov else '[-]':>5} "
+            f"{'[+]' if r.flags.rota_a else '[-]':>5}  {lvl}"
+        )
+    click.echo("")
+
+    click.secho(f"Trend direction: {trend.direction.value}", fg=col)
+
+    if trend.etec_newly_detected:
+        click.secho(
+            "  ETEC K99 NEWLY DETECTED: IV antibiotic therapy required within 2 h; "
+            "isolate affected calves immediately.",
+            fg="red",
+            bold=True,
+        )
+    if trend.etec_cleared:
+        click.secho(
+            "  ETEC K99 cleared: current treatment is working. Maintain hygiene and "
+            "pen-sanitation protocols for at least three consecutive negative intervals.",
+            fg="green",
+        )
+    if trend.salmonella_persistent:
+        click.secho(
+            "  SALMONELLA PERSISTENT: detected in every interval -- herd-level "
+            "contamination or chronic shedder suspected; submit for culture and "
+            "herd investigation.",
+            fg="red",
+        )
+    if trend.zoonotic_risk_count > 0:
+        click.secho(
+            f"  Zoonotic risk in {trend.zoonotic_risk_count} interval(s) "
+            "(Salmonella and/or Cryptosporidium): enforce gloves and handwashing.",
+            fg="yellow",
+        )
+    if trend.antibiotic_required_count > 0:
+        click.secho(
+            f"  Antibiotics indicated in {trend.antibiotic_required_count} interval(s) "
+            "(ETEC K99 and/or Salmonella detected).",
+            fg="yellow",
+        )
+    click.echo(f"  Worst alert level: {trend.worst_alert_level.value}")
+    click.echo("")
+    click.echo(f"Interpretation: {trend.interpretation}")
+    click.echo("")
+    click.echo(f"Recommended action: {trend.recommended_action}")
+
+    if out_json is not None:
+        write_trend_json(trend, out_json)
+        click.echo(f"\nTrend assessment written to {out_json}")
+
+    if out_csv is not None:
+        write_trend_csv(trend, out_csv)
+        click.echo(f"CSV timeline written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
