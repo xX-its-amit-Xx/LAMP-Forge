@@ -2012,6 +2012,169 @@ def version() -> None:
     click.echo(f"lamp-forge {__version__}")
 
 
+@cli.command(name="accuracy")
+@click.option("--tp", "tp", type=int, required=True, help="True-positive count.")
+@click.option("--fp", "fp", type=int, required=True, help="False-positive count.")
+@click.option("--tn", "tn", type=int, required=True, help="True-negative count.")
+@click.option("--fn", "fn", type=int, required=True, help="False-negative count.")
+@click.option(
+    "--prevalence",
+    "prevalences",
+    type=float,
+    multiple=True,
+    default=(0.01, 0.05, 0.10, 0.20),
+    show_default=True,
+    help=(
+        "Disease/target prevalence for PPV/NPV calculation (0-1). "
+        "Repeat to evaluate multiple scenarios "
+        "(e.g. --prevalence 0.05 --prevalence 0.10)."
+    ),
+)
+@click.option(
+    "--confidence",
+    "confidence",
+    type=float,
+    default=0.95,
+    show_default=True,
+    help="Wilson score CI confidence level (default 0.95 for 95% CI).",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full accuracy table to a CSV file.",
+)
+def accuracy(
+    tp: int,
+    fp: int,
+    tn: int,
+    fn: int,
+    prevalences: tuple[float, ...],
+    confidence: float,
+    out_csv: Path | None,
+) -> None:
+    r"""Compute diagnostic accuracy metrics from a 2x2 validation-study table.
+
+    Takes the true-positive (TP), false-positive (FP), true-negative (TN),
+    and false-negative (FN) counts from a contrived-specimen or clinical
+    validation study and reports:
+
+    \b
+      - Sensitivity (Sn) = TP / (TP + FN) with Wilson score 95% CI
+      - Specificity (Sp) = TN / (TN + FP) with Wilson score 95% CI
+      - LR+  = Sn / (1 - Sp)     [>= 10 is "strong"; >= 20 is BioVind target]
+      - LR-  = (1 - Sn) / Sp     [<= 0.1 is "strong exclusion"]
+      - PPV  at each --prevalence (via Bayes' theorem)
+      - NPV  at each --prevalence (via Bayes' theorem)
+      - Youden J = Sn + Sp - 1   [>= 0.90 is BioVind acceptance criterion]
+
+    Wilson score CIs are preferred over the Wald (normal-approximation) CI
+    for small validation panels (n = 20-100) where the Wald CI is unreliable
+    near 0 or 1.  PPV and NPV use the point estimates of Sn and Sp.
+
+    \b
+    Example -- PRRSV ORF7 validation panel, 50 positive + 50 negative specimens:
+        lamp-forge accuracy \\
+          --tp 47 --fp 2 --tn 48 --fn 3 \\
+          --prevalence 0.05 --prevalence 0.10 \\
+          --out-csv results/prrsv_orf7_accuracy.csv
+
+    \b
+    Example -- SRB dsrB oilfield panel (30 pos, 30 neg), multiple prevalences:
+        lamp-forge accuracy \\
+          --tp 29 --fp 0 --tn 30 --fn 1 \\
+          --prevalence 0.01 --prevalence 0.05 --prevalence 0.20
+    """
+    import math
+
+    from lamp_forge.accuracy import ContingencyTable, accuracy_table, write_accuracy_csv
+
+    try:
+        table = ContingencyTable(tp=tp, fp=fp, tn=tn, fn=fn)
+    except ValueError as exc:
+        click.secho(f"Input error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    if not prevalences:
+        click.secho("--prevalence must be supplied at least once.", fg="red", err=True)
+        sys.exit(2)
+
+    try:
+        metrics_list = accuracy_table(table, tuple(prevalences), confidence)
+    except ValueError as exc:
+        click.secho(f"Computation error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    # --- Header ----------------------------------------------------------------
+    click.echo(f"Validation panel: {table.n_total} specimens")
+    click.echo(f"  Positive reference: {table.n_positive_ref}  (TP={tp}, FN={fn})")
+    click.echo(f"  Negative reference: {table.n_negative_ref}  (TN={tn}, FP={fp})")
+    click.echo(f"  Wilson CI confidence: {confidence * 100:.0f}%")
+    click.echo("")
+
+    m0 = metrics_list[0]
+    sn = m0.sensitivity
+    sp = m0.specificity
+
+    # --- Sensitivity / Specificity (prevalence-independent) -------------------
+    click.echo(
+        f"Sensitivity : {sn.point_estimate * 100:6.2f}%  "
+        f"[{sn.lower * 100:.2f}%, {sn.upper * 100:.2f}%]"
+    )
+    click.echo(
+        f"Specificity : {sp.point_estimate * 100:6.2f}%  "
+        f"[{sp.lower * 100:.2f}%, {sp.upper * 100:.2f}%]"
+    )
+
+    # Likelihood ratios
+    lr_pos_str = f"{m0.lr_positive:.2f}" if math.isfinite(m0.lr_positive) else "inf (Sp=100%)"
+    lr_neg_str = f"{m0.lr_negative:.4f}" if math.isfinite(m0.lr_negative) else "N/A (Sp=0%)"
+    click.echo(f"LR+         : {lr_pos_str}")
+    click.echo(f"LR-         : {lr_neg_str}")
+    click.echo(f"Youden J    : {m0.youden_j:.4f}")
+    click.echo("")
+
+    # --- PPV / NPV table (prevalence-dependent) --------------------------------
+    header = f"{'Prevalence (%)':>16}  {'PPV (%)':>8}  {'NPV (%)':>8}"
+    click.echo(header)
+    click.echo("-" * len(header))
+    for m in metrics_list:
+        click.echo(f"{m.prevalence * 100:>16.2f}  {m.ppv * 100:>8.2f}  {m.npv * 100:>8.2f}")
+
+    # --- Acceptance criteria summary ------------------------------------------
+    click.echo("")
+    biovind_ok = (
+        sn.point_estimate >= 0.95
+        and sp.point_estimate >= 0.99
+        and (math.isinf(m0.lr_positive) or m0.lr_positive >= 20.0)
+        and m0.youden_j >= 0.90
+    )
+    if biovind_ok:
+        click.secho(
+            "BioVind acceptance criteria met  (Sn >= 95%, Sp >= 99%, LR+ >= 20, Youden J >= 0.90).",
+            fg="green",
+        )
+    else:
+        reasons = []
+        if sn.point_estimate < 0.95:
+            reasons.append(f"Sn {sn.point_estimate * 100:.1f}% < 95%")
+        if sp.point_estimate < 0.99:
+            reasons.append(f"Sp {sp.point_estimate * 100:.1f}% < 99%")
+        if math.isfinite(m0.lr_positive) and m0.lr_positive < 20.0:
+            reasons.append(f"LR+ {m0.lr_positive:.1f} < 20")
+        if m0.youden_j < 0.90:
+            reasons.append(f"Youden J {m0.youden_j:.3f} < 0.90")
+        click.secho(
+            f"BioVind criteria NOT fully met: {'; '.join(reasons)}.",
+            fg="yellow",
+        )
+
+    if out_csv is not None:
+        write_accuracy_csv(metrics_list, out_csv)
+        click.echo(f"\nAccuracy table written to {out_csv}")
+
+
 @cli.command(name="sampling-plan")
 @click.option(
     "--prevalence",
