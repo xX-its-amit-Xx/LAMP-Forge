@@ -4728,3 +4728,405 @@ endemic IBV baseline.
   *Rev Sci Tech OIE* 19(2):443-462. doi:10.20506/rst.19.2.1231
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 32 -- Brucella IS711 LAMP: farm biosecurity and human point-of-care (`lamp-forge brucella-risk` / `lamp-forge brucella-trend`)
+
+**Goal.** Design a pan-*Brucella* LAMP assay targeting the IS711 insertion
+sequence, then use `lamp-forge brucella-risk` to convert a portable IS711
+LAMP result into a structured alert — species-level interpretation, WOAH
+notification flag, and recommended clinical or veterinary action — and
+`lamp-forge brucella-trend` to track a herd or patient surveillance series
+over time.
+
+**Why it is important.** Brucellosis is one of the world's most prevalent
+bacterial zoonoses, with ~500,000 new human infections estimated annually
+(WHO).  In livestock it is a WOAH-listed Tier 1 notifiable disease with
+major trade and welfare consequences:
+
+- **Bovine brucellosis** (*B. abortus*, cattle): causes late-term abortion
+  storms, reduced milk yield, and long-lasting infertility.  Mandatory
+  national eradication programmes are in force in the US, EU, and many
+  other jurisdictions; a positive pen-side result triggers immediate herd
+  quarantine and reporting to the national veterinary authority.
+- **Small-ruminant brucellosis** (*B. melitensis*, goats and sheep): the
+  dominant cause of human brucellosis globally.  *B. melitensis* has been
+  eliminated from the US but remains endemic in North Africa, the Middle
+  East, Central Asia, and Southern Europe; imported small ruminants are
+  the main re-introduction route.
+- **Porcine brucellosis** (*B. suis* biovars 1 and 3): significant zoonotic
+  risk in pig workers; biovars 2 and 4 are less zoonotic.
+- **Human brucellosis** (undulant fever): febrile illness caused by all
+  three species above; requires doxycycline + rifampin combination therapy
+  for 6 weeks; missed or late diagnosis leads to relapse and chronic
+  illness.
+
+A portable IS711 LAMP assay running on a BioVind BioID device is the
+fastest route to a quarantine or public-health notification decision in
+all three scenarios — farm biosecurity (cattle, small ruminant, swine)
+and human point-of-care (rural clinic, urgent care, farm-worker
+occupational health).
+
+**Why IS711.**
+IS711 (also annotated IS6501 / ISBm2) is a *Brucella*-specific insertion
+sequence present in 5–40 copies per genome across all nine *Brucella*
+species.  Its multi-copy nature gives 10–100x lower analytical LOD than
+single-copy chromosomal targets (Abd El Wahed et al. 2015 *PLoS NTD*),
+making it the gold-standard molecular target for brucellosis diagnostics
+in field-deployable settings.  IS711 is not present in *Ochrobactrum* spp.
+or other alpha-proteobacterial near-neighbours, so a correctly designed
+assay is genus-specific.
+
+The internal conserved region used in published LAMP assays shows <2%
+nucleotide divergence across *B. abortus*, *B. melitensis*, *B. suis*,
+*B. ovis*, *B. canis*, and newer marine *Brucella* species — exceptional
+conservation for an isothermal assay target.
+
+**Note on species discrimination.** IS711 LAMP is a **genus-level** assay.
+It cannot distinguish *B. abortus* from *B. melitensis* from *B. suis*.
+`lamp-forge brucella-risk` infers the most probable species from the
+*sample context* (cattle, small ruminant, swine, human, or environmental)
+and adjusts the alert level and recommended action accordingly.  For
+definitive species identification, follow up with culture or a species-
+discriminating PCR at a reference laboratory.
+
+**Target sequences.** NCBI taxon 234 (*Brucella* genus), gene `IS711`,
+`max_sequences: 30` retrieves sequences spanning all major species and
+biovars: *B. abortus* biovars 1–7/9, *B. melitensis* biovars 1–3,
+*B. suis* biovars 1–5, *B. ovis*, and *B. canis*.
+
+**Off-target panel.** The most important off-targets for IS711 are other
+alpha-proteobacteria that share genomic synteny with *Brucella*:
+
+| File | Source | Why |
+|---|---|---|
+| `ochrobactrum_anthropi.fasta` | ATCC 49188 RefSeq | Closest IS711-free relative; reclassified *Brucella anthropi* in 2020; farm and clinical environment |
+| `rhizobium_leguminosarum.fasta` | RL3841 RefSeq (NC_008380.1) | Soil alpha-proteobacterium present in farm environments |
+| `agrobacterium_tumefaciens.fasta` | C58 RefSeq (NC_003062.2) | Plant pathogen; found in soil and irrigation water on farms |
+| `bartonella_henselae.fasta` | Houston-1 RefSeq (NC_005956.1) | Human-infecting alpha-proteobacterium; clinical differential for human POC samples |
+| `bovine_genome_fragment.fasta` | Subset of ARS-UCD1.3 chr1 | Host DNA from bovine blood or tissue samples; dominant nucleic acid in animal samples |
+| `human_chr_fragment.fasta` | Subset of GRCh38 chr1 | Host DNA from human blood or serum samples |
+
+**Config.** Use the ready-made config at `config/brucella_is711.yaml`, or
+paste the block below:
+
+```yaml
+target:
+  name: brucella_is711
+  taxon_id: 234              # Brucella genus -- pan-species (abortus, melitensis, suis, ovis, canis)
+  gene: IS711                # insertion sequence IS711 (also annotated IS6501 / ISBm2)
+  max_sequences: 30          # span major Brucella spp. and biovars
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.20
+  min_region_length: 220
+
+primer:
+  tm_min: 60.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 45.0               # Brucella genome ~57% GC; IS711 is ~55-60% GC
+  gc_max: 68.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/brucella_is711
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config notes.**
+
+- `gc_min: 45.0` -- *Brucella* has one of the highest GC contents among
+  animal pathogens (~57% genomic GC).  IS711 itself is ~55–60% GC.  The
+  standard LAMP-Forge default of `gc_min: 40` admits primers that are
+  too AT-rich for this target; raising to 45 keeps candidates realistic.
+  Unlike the AT-rich targets in Recipe 22 (*C. difficile*, `gc_min: 25`)
+  and Recipe 5 (KPC, `gc_min: 30`), *Brucella* is at the high-GC end of
+  the primer design space.
+
+- `gc_max: 68.0` -- Caps primers below the GC ceiling of the IS711
+  transposase ORF (~68% GC in the most GC-dense sub-regions) while
+  leaving room for all biologically reasonable candidates.
+
+- `tm_min: 60.0` -- IS711 is a chromosomal **DNA** target; standard LAMP
+  (not RT-LAMP) is appropriate.  Do **not** raise to the 63 degC one-step
+  RT-LAMP co-activity floor used for RNA-target assays (PRRSV, FMDV,
+  AIV, CSFV, NDV, PEDV, PDCoV in Recipes 11-14, 18, 27-29).
+
+- `entropy_threshold: 0.20` -- IS711 is exceptionally conserved within
+  the genus; the internal region used in published LAMP assays shows <2%
+  inter-species divergence, so the standard 0.20-bit entropy threshold
+  (same as well-conserved housekeeping genes rpoB and speB) is appropriate.
+
+- `min_identity_threshold: 0.85` / `min_coverage_threshold: 0.85` -- The
+  most important off-target is *Ochrobactrum anthropi* (reclassified as
+  *Brucella anthropi* in 2020 by some authorities), which shares ~70-80%
+  average nucleotide identity with *Brucella* but lacks IS711.  The
+  0.85/0.85 threshold is the minimum needed to surface any residual
+  cross-reactive candidate before wet-lab validation.
+
+**Run the primer design pipeline.**
+
+```bash
+docker compose run --rm lamp-forge run --config /work/config/brucella_is711.yaml
+```
+
+**Estimate LOD before ordering** (whole blood 200 uL, 60% DNA extraction
+efficiency, 50 uL eluate, 5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 200 \
+  --efficiency 0.60 \
+  --eluate-volume 50 \
+  --reaction-input 5
+```
+
+Effective sample = 200 x 0.60 x (5/50) = 12 uL per reaction -> LOD_95
+approx 200 copies/mL of whole blood.  *Brucella* bacteraemia during the
+acute febrile phase can reach 10^3-10^5 CFU/mL; the multi-copy IS711
+(5-40 copies per cell) further multiplies effective target molecules ~20-fold,
+putting the functional LOD closer to 10-40 *Brucella* CFU/mL -- well within
+the clinically detectable range.
+
+**Check TTP for the BioVind device window.**
+
+```bash
+lamp-forge ttp \
+  --copies 200 \
+  --preset lamp
+```
+
+At 200 copies/reaction (with IS711 multi-copy amplification equivalent to
+~10-40 cells) the predicted TTP is ~43 min -- inside the 60-min BioVind
+BioID window with headroom for sample-matrix inhibition.
+
+**Verify config before running.**
+
+```bash
+lamp-forge validate \
+  --config config/brucella_is711.yaml \
+  --no-check-dirs
+```
+
+**Export primers for ordering.**
+
+```bash
+lamp-forge export \
+  --input results/brucella_is711/primer_sets.json \
+  --format idt \
+  --target-label Brucella_IS711 \
+  --out orders/brucella_is711_idt_order.csv
+```
+
+**Interpreting a result with `lamp-forge brucella-risk`.**
+
+IS711 detects *Brucella* genus but the clinical or veterinary action depends
+on sample context.  `lamp-forge brucella-risk` accepts the IS711 LAMP result
+(`--is711` / `--no-is711`) and the sample context (`--context`) and returns a
+structured alert:
+
+```bash
+# Positive result from a cattle pen-side blood sample
+lamp-forge brucella-risk --is711 --context cattle
+
+# Positive result from a small-ruminant (goat/sheep) serum sample
+lamp-forge brucella-risk --is711 --context small_ruminant
+
+# Positive result from a swine herd blood sample
+lamp-forge brucella-risk --is711 --context swine
+
+# Positive result from a human patient (rural clinic / farm-worker POC)
+lamp-forge brucella-risk --is711 --context human
+
+# Negative result -- all contexts give NEGATIVE alert
+lamp-forge brucella-risk --no-is711 --context cattle
+
+# Environmental sample (water trough, fomite wipe, soil)
+lamp-forge brucella-risk --is711 --context environmental
+
+# Save structured output for downstream workflows or trend analysis
+lamp-forge brucella-risk \
+  --is711 \
+  --context cattle \
+  --out-json results/herd-A/2026-01-is711.json \
+  --out-csv  results/herd-A/2026-01-is711.csv
+```
+
+**Alert level reference.**
+
+| Context | IS711 | Alert | Score | Notifiable | Zoonotic | Immediate report |
+|---|---|---|---|---|---|---|
+| Human | Positive | CRITICAL | 90 | Yes | Yes | Yes |
+| Cattle | Positive | HIGH | 60 | Yes | Yes | Yes |
+| Small ruminant | Positive | HIGH | 60 | Yes | Yes | Yes |
+| Swine | Positive | HIGH | 60 | Yes | Yes | Yes |
+| Environmental | Positive | LOW | 25 | No | No | No |
+| Any | Negative | NEGATIVE | 0 | No | No | No |
+
+A CRITICAL result (human context) triggers the public-health notification
+pathway: notify the local health department immediately and start empiric
+doxycycline + rifampin while confirmatory serology is sent to the reference
+laboratory.  HIGH results (livestock) trigger the national veterinary
+authority notification pathway and immediate herd quarantine.  LOW results
+(environmental) require follow-up animal testing but not immediate reporting.
+
+**Tracking a herd surveillance series with `lamp-forge brucella-trend`.**
+
+Use `lamp-forge brucella-trend` to convert a chronological sequence of IS711
+results into a trend assessment: NEWLY_DETECTED, PERSISTENT, RESOLVING,
+STABLE_CLEAR, or INSUFFICIENT_DATA.  This drives the key operational decisions:
+when to notify the veterinary authority, when to conduct whole-herd serology,
+and when it is safe to apply for quarantine release.
+
+*From individual JSON files (one file per monitoring interval):*
+
+```bash
+# Monthly cattle surveillance -- four consecutive months
+lamp-forge brucella-risk --is711   --context cattle \
+  --out-json results/herd-A/2026-01.json
+lamp-forge brucella-risk --is711   --context cattle \
+  --out-json results/herd-A/2026-02.json
+lamp-forge brucella-risk --no-is711 --context cattle \
+  --out-json results/herd-A/2026-03.json
+lamp-forge brucella-risk --no-is711 --context cattle \
+  --out-json results/herd-A/2026-04.json
+
+lamp-forge brucella-trend \
+  --brucella-result results/herd-A/2026-01.json \
+  --brucella-result results/herd-A/2026-02.json \
+  --brucella-result results/herd-A/2026-03.json \
+  --brucella-result results/herd-A/2026-04.json \
+  --out-json results/herd-A/trend_Q1.json
+```
+
+Expected trend output for the series above (positive, positive, negative,
+negative -- RESOLVING):
+
+```
+Brucella IS711 surveillance trajectory: 4 sample(s)
+
+Sample ID      Date          IS711  Context         Alert
+-----------------------------------------------------------
+                              [+]    cattle          HIGH
+                              [+]    cattle          HIGH
+                              [-]    cattle          NEGATIVE
+                              [-]    cattle          NEGATIVE
+
+Trend direction: RESOLVING
+  IS711 cleared: confirm with serology before lifting quarantine.
+  Worst alert level: HIGH
+```
+
+*From a monitoring-spreadsheet CSV (header required):*
+
+```
+sample_id,date,is711_positive,context
+HerdA-2026-01,2026-01-15,1,cattle
+HerdA-2026-02,2026-02-15,1,cattle
+HerdA-2026-03,2026-03-15,0,cattle
+HerdA-2026-04,2026-04-15,0,cattle
+```
+
+```bash
+lamp-forge brucella-trend \
+  --csv monitoring/herd_A_2026.csv \
+  --out-json results/herd-A/trend_2026.json
+```
+
+**Trend direction reference.**
+
+| Direction | Meaning | Priority action |
+|---|---|---|
+| NEWLY_DETECTED | IS711 positive for the first time in this series | Notify national veterinary authority; initiate herd quarantine |
+| PERSISTENT | IS711 positive in >= 75% of >= 3 intervals | Whole-herd serology to identify and remove source animal |
+| RESOLVING | IS711 was positive, now negative | Confirm clearance with serology before applying for quarantine release |
+| STABLE_CLEAR | All intervals negative | Routine quarterly surveillance; no action required |
+| INSUFFICIENT_DATA | Only one sample available | Collect next sample and re-run |
+
+**Multiplex IS711 with farm biosecurity targets** for a single-run differential
+panel on the BioVind device:
+
+```bash
+lamp-forge panel \
+  --set Brucella_IS711=results/brucella_is711/primer_sets.json \
+  --set ASFV=results/asfv_p72/primer_sets.json \
+  --set FMDV=results/fmdv_3dpol/primer_sets.json \
+  --top-per-target 5 \
+  --out results/farm_4plex_brucella
+```
+
+Brucella IS711 is a DNA LAMP assay running at 60-65 degC, compatible with
+co-incubation alongside one-step RT-LAMP assays for RNA viruses (ASFV is a
+large DNA virus, also compatible).  Use `lamp-forge cartridge` to assign
+channel slots:
+
+```bash
+lamp-forge cartridge \
+  --panel results/farm_4plex_brucella/panel.json \
+  --out results/farm_4plex_brucella/cartridge_build.json
+```
+
+**Field and safety notes.**
+
+- *Brucella* spp. are BSL-3 pathogens (CDC) and USDA Select Agents
+  (*B. abortus*, *B. melitensis*, *B. suis*).  All live-culture work must
+  be conducted in a BSL-3 facility.  LAMP on extracted DNA or
+  heat-inactivated samples is appropriate for a BSL-2 or field setting.
+- Sample types for livestock: EDTA whole blood, serum, milk (ring test),
+  vaginal swab post-abortion, fetal stomach contents.  For human POC:
+  EDTA whole blood or serum from febrile patients with livestock exposure.
+- A positive IS711 LAMP result is a presumptive positive for *Brucella*
+  genus.  **Do not use this result alone for regulatory reporting** --
+  confirmatory testing at an approved reference laboratory (culture,
+  species-specific PCR, complement fixation test or ELISA) is required
+  before quarantine orders or trade restrictions.
+- Run a no-template control (NTC) and a positive extraction control
+  (purified *Brucella* reference-strain DNA or heat-killed *B. abortus*
+  standard, e.g. ATCC 23448) in every batch.
+- Include the universal 16S rRNA internal extraction control (Recipe 19)
+  to confirm that inhibition is not causing false-negative results in
+  whole-blood or milk samples.
+- Environmental samples (water troughs, fomite wipes, soil) may contain
+  PCR-detectable IS711 DNA from persistence of dead *Brucella* cells or
+  free DNA.  A positive environmental result does **not** confirm active
+  infection in animals; follow up with animal pen-side testing before
+  regulatory reporting.
+
+**References.**
+
+- Abd El Wahed A, El-Deeb A, El-Tholoth M et al. (2015) Loop-mediated
+  isothermal amplification on a chip for detection of *Brucella* spp. in
+  milk samples. *PLoS Negl Trop Dis* 9(10):e0004124.
+  doi:10.1371/journal.pntd.0004124
+- Al-Dahouk S, Nockler K, Scholz HC et al. (2010) Evaluation of
+  *Brucella* IS711-based loop-mediated isothermal amplification for
+  human brucellosis. *Ann Clin Microbiol Antimicrob* 9:15.
+  doi:10.1186/1476-0711-9-15
+- Godfroid J, Cloeckaert A, Liautard JP et al. (2005) From the discovery
+  of the Malta fever's agent to the discovery of a marine mammal reservoir,
+  brucellosis has continuously been a re-emerging zoonosis.
+  *Vet Res* 36(3):313-326. doi:10.1051/vetres:2005003
+- Godfroid J, Nielsen K, Saegerman C (2010) Diagnosis of brucellosis in
+  livestock and wildlife. *Croat Med J* 51(4):296-305.
+  doi:10.3325/cmj.2010.51.296
+- WOAH (2021). Bovine brucellosis. *Terrestrial Animal Health Code*,
+  Chapter 8.4; *Terrestrial Manual*, Chapter 3.1.2.
+- WHO (2006). Brucellosis in humans and animals. WHO/CDS/EPR/2006.7.
+  World Health Organization, Geneva.
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
