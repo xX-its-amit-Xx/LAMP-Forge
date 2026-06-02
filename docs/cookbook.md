@@ -5535,3 +5535,165 @@ extraction.
   protein.  *J Virol* 78(9):4675-4683. doi:10.1128/JVI.78.9.4675-4683.2004
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+## Recipe 31 -- Swine Respiratory Disease Complex (PRDC) three-target panel (`lamp-forge swine-respiratory-risk`)
+
+**Goal.** A portable BioVind-style three-channel LAMP panel that distinguishes
+the three core drivers of the Porcine Respiratory Disease Complex (PRDC):
+PRRSV (RNA), PCV2 (DNA), and *Mycoplasma hyopneumoniae* (DNA).  Together,
+these three pathogens account for the majority of swine respiratory mortality
+and production loss in commercial grow-finish pigs worldwide.
+
+**Why it matters.**  PRDC is the most economically significant disease complex
+in commercial pig production -- USD 664 M/yr from PRRSV alone in the US
+(Holtkamp et al. 2013), EUR 385 M/yr from PCV2 in the EU (Segalés et al.
+2005), and over USD 1 B/yr globally from *M. hyopneumoniae* (Maes et al.
+2018).  The three pathogens are not independent: PRRSV destroys alveolar
+macrophages, PCV2 further dysregulates innate immunity, and Mhp eliminates
+the mucociliary escalator -- together producing mortality and production
+losses far exceeding the sum of their individual effects.  A portable pen-side
+result distinguishes "PRRSV only (restrict movement)" from "full PRDC
+(restrict + treat + vaccinate + call vet)" at the point of care, before the
+situation escalates.
+
+### Targets
+
+| Config | Pathogen | NA type | Gene | Assay |
+|---|---|---|---|---|
+| `prrsv_orf7.yaml` | PRRSV (pan-genotype) | ssRNA | ORF7 | RT-LAMP |
+| `pcv2_cap.yaml` | Porcine circovirus 2 (pan-genotype) | ssDNA | cap (ORF2) | LAMP |
+| `mycoplasma_hyop_p97.yaml` | *Mycoplasma hyopneumoniae* | DNA | p97 adhesin | LAMP |
+
+### Designing primers for each target
+
+Design PRRSV, PCV2, and Mhp primers independently (one config per run):
+
+```bash
+# PRRSV (RT-LAMP -- RNA virus)
+lamp-forge run --config config/prrsv_orf7.yaml
+lamp-forge rt-check --input results/prrsv_ORF7/primer_sets.json --na-type rna
+
+# PCV2 (standard LAMP -- ssDNA virus, dsDNA replication intermediate)
+lamp-forge run --config config/pcv2_cap.yaml
+
+# Mycoplasma hyopneumoniae (standard LAMP -- DNA bacterium)
+lamp-forge run --config config/mycoplasma_hyop_p97.yaml
+```
+
+### Multiplex panel cross-dimer check
+
+Before pooling, confirm the three primer sets are compatible:
+
+```bash
+lamp-forge panel \
+  --set PRRSV=results/prrsv_ORF7/primer_sets.json \
+  --set PCV2=results/pcv2_cap/primer_sets.json \
+  --set Mhp=results/mycoplasma_hyop_p97/primer_sets.json \
+  --top-per-target 5 \
+  --dimer-dg-threshold -5.0 \
+  --out results/prdc_panel
+```
+
+### Pooling the working stock
+
+PRRSV is RNA (RT-LAMP); PCV2 and Mhp are DNA (LAMP).  For a one-step
+reaction that runs all three simultaneously, use a WarmStart LAMP Master Mix
+that contains RTx (e.g. NEB WarmStart LAMP Kit E1700 at 65 degC).  The pool
+uses standard LAMP stoichiometry per target:
+
+```bash
+lamp-forge pool \
+  --panel results/prdc_panel/panel.json \
+  --stock-conc 200 \
+  --total-volume 500 \
+  --out results/prdc_panel/prdc_pool_sheet.csv
+```
+
+At 3 targets, minimum stock concentration is 3 x 44 = 132 uM; request
+200 uM resuspension from IDT or Twist.
+
+### Interpreting a pen-side result
+
+Feed the positivity flags from the device into the risk engine:
+
+```bash
+# Example -- PRRSV and PCV2 co-detected (classic PRDC)
+lamp-forge swine-respiratory-risk --prrsv --pcv2
+
+# Example -- Mhp alone (endemic enzootic pneumonia)
+lamp-forge swine-respiratory-risk --mhp
+
+# Save for trend tracking
+lamp-forge swine-respiratory-risk --prrsv --pcv2 \
+  --out-json results/barn-A/2026-01.json
+```
+
+**Scoring model and alert levels:**
+
+| Pattern | Score | Alert |
+|---|---|---|
+| PRRSV + PCV2 + Mhp | 90 | CRITICAL |
+| PRRSV + PCV2 | 70 | CRITICAL |
+| PRRSV + Mhp | 60 | CRITICAL |
+| PCV2 + Mhp | 50 | HIGH |
+| PRRSV alone | 40 | HIGH |
+| PCV2 alone | 30 | MODERATE |
+| Mhp alone | 20 | LOW |
+| All negative | 0 | NEGATIVE |
+
+PRRSV triggers `movement_restriction_required`.  Two or more positives
+triggers `complex_prdc` -- the multi-pathogen synergy warning.
+
+### Tracking trend across monitoring intervals
+
+```bash
+lamp-forge swine-respiratory-trend \
+  --resp-result results/barn-A/2026-01.json \
+  --resp-result results/barn-A/2026-02.json \
+  --resp-result results/barn-A/2026-03.json \
+  --out-json results/barn-A/prdc_trend_Q1.json
+
+# Or from a monitoring CSV:
+lamp-forge swine-respiratory-trend \
+  --csv results/barn-A/monitoring.csv \
+  --out-json results/barn-A/prdc_trend.json \
+  --out-csv results/barn-A/prdc_timeline.csv
+```
+
+CSV format:
+
+```
+sample_id,date,prrsv,pcv2,mhp
+BarnA-2026-01,2026-01-15,1,0,0
+BarnA-2026-02,2026-02-15,1,1,0
+BarnA-2026-03,2026-03-15,0,1,1
+```
+
+Trend directions: EMERGING (PRRSV newly detected or burden rising),
+STABLE_CLEAR, STABLE_ENDEMIC (Mhp/PCV2 endemic), RESOLVING.
+
+### Veterinary decision matrix
+
+| Alert | Key flag | Immediate action |
+|---|---|---|
+| CRITICAL | `complex_prdc=True` | Full PRDC protocol; movement restriction; vet call |
+| HIGH | `movement_restriction_required=True` | Restrict movement; assess vaccination; vet call |
+| MODERATE | -- | Verify PCV2 vaccination; monitor; vet consultation |
+| LOW | -- | Review Mhp metaphylaxis schedule; monitor |
+| NEGATIVE | -- | Routine surveillance; confirm extraction control positive |
+
+**References.**
+
+- Holtkamp DJ et al. (2013) Assessment of the economic impact of PRRSV on
+  United States pork producers.  *J Swine Health Prod* 21(2):72-84.
+- Segalés J, Allan GM, Domingo M (2005) Porcine circovirus diseases.
+  *Anim Health Res Rev* 6(2):119-142.  doi:10.1079/AHR2005106
+- Maes D et al. (2018) Swine enzootic pneumonia: a review.  *Vet Rec Open*
+  5(1):e000228.  doi:10.1136/vetreco-2017-000228
+- Harms PA et al. (2002) Experimental reproduction of PRDC with PRRSV, Mhp,
+  and PCV2.  *J Swine Health Prod* 10(3):105-111.
+- Zhang X et al. (2019) Loop-mediated isothermal amplification for Mhp
+  detection.  *J Vet Diagn Invest* 31(4):571-576.
+  doi:10.1177/1040638719843372
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63.  doi:10.1093/nar/28.12.e63

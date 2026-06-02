@@ -1,0 +1,78 @@
+# LAMP-Forge config: Mycoplasma hyopneumoniae (Mhp) -- p97 adhesin gene
+# ============================================================================
+# Target: Mhp detection via p97 (MHP183), the major ciliary adhesin
+# Why this target: Mycoplasma hyopneumoniae is the aetiological agent of
+# Swine Enzootic Pneumonia (SEP), the most widespread respiratory disease in
+# commercial pig production worldwide.  Nearly all commercial pig farms are
+# endemically infected.  The direct economic impact is driven by reduced
+# average daily gain (ADG reduced ~15%), poor feed conversion ratio (FCR
+# increased ~10%), and increased susceptibility to secondary bacterial
+# infections (Pasteurella multocida, Actinobacillus pleuropneumoniae,
+# Streptococcus suis), which together increase mortality in affected grow-
+# finish pigs.  Estimated global production losses exceed USD 1 billion/yr
+# (Maes et al. 2018).
+#
+# In the Porcine Respiratory Disease Complex (PRDC), Mhp acts as a
+# "gateway" pathogen: it destroys the mucociliary escalator, suppresses local
+# immune function, and provides attachment sites for secondary pathogens.
+# A portable LAMP assay deployed at pen-side can determine Mhp status before
+# or at weaning, when herd-level colonisation status governs the timing of
+# antibiotic metaphylaxis and vaccination schedules.
+#
+# The p97 gene (~2892 nt; also named MHP183 or P97 adhesin) encodes the
+# major ciliary adhesin.  Its N-terminal R1 repeat region is the basis of
+# published Mhp PCR and LAMP assays.  Mhp is a slow-growing bacterium; LAMP
+# directly on extracted DNA from bronchial lavage or swab eluate at 65 degC
+# gives a result in 30-45 min without a culture step.
+#
+# Mhp is a wall-less bacterium (Mollicutes); it lacks peptidoglycan and is
+# intrinsically resistant to beta-lactam antibiotics.  A positive result
+# should prompt evaluation of enrofloxacin, doxycycline, or tiamulin-based
+# treatment protocols in consultation with the site veterinarian.
+#
+# References:
+#   Zhang X et al. (2019) Loop-mediated isothermal amplification for Mhp
+#       detection. J Vet Diagn Invest 31(4):571-576.
+#   Maes D et al. (2018) Swine enzootic pneumonia, still a problem? Vet Rec
+#       Open 5(1):e000228.
+# ============================================================================
+
+target:
+  name: mycoplasma_hyop_p97
+  taxon_id: 2104               # Mycoplasma hyopneumoniae
+  gene: p97                    # major ciliary adhesin; alt: "MHP183" / "p97 adhesin"
+  max_sequences: 20            # clinical and reference strains across genotypes
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Mycoplasma species that co-colonise swine respiratory tract:
+  #   m_hyorhinis.fasta  - NC_014448.1; commensal swine upper respiratory
+  #   m_hyosynoviae.fasta - NC_014282.1; swine joint / respiratory
+  #   m_flocculare.fasta  - commensal; closest relative to Mhp
+  #   sus_scrofa_fragment.fasta - Sus scrofa host DNA from bronchial lavage
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.20   # p97 R1 repeat region is highly conserved within Mhp
+  min_region_length: 200
+
+primer:
+  tm_min: 60.0              # standard LAMP (DNA bacterium; no RT step required)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 30.0              # Mhp genome is AT-rich (27.8% GC overall)
+  gc_max: 55.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/mycoplasma_hyop_p97
+  top_n: 10
+  generate_html: true
+  generate_csv: true

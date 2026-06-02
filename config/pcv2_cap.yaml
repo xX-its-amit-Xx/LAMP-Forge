@@ -1,0 +1,69 @@
+# LAMP-Forge config: Porcine Circovirus 2 (PCV2) -- cap gene (ORF2)
+# ============================================================================
+# Target: PCV2 pan-genotype detection via the cap gene (capsid protein, ORF2)
+# Why this target: PCV2 is a ubiquitous, immunosuppressive ssDNA virus that
+# potentiates all other respiratory pathogens in swine.  It is the primary
+# driver of Porcine Circovirus-Associated Disease (PCVAD), which encompasses
+# Postweaning Multisystemic Wasting Syndrome (PMWS), Porcine Dermatitis and
+# Nephropathy Syndrome (PDNS), and respiratory disease complex (PRDC).
+# Estimated economic losses: EUR 385 M/yr in the EU; comparable in the US
+# (Segalés et al. 2005).  Globally four genotypes circulate: PCV2a (historic
+# pandemic), PCV2b (replaced 2a ca. 2005), PCV2c (European/rare), PCV2d
+# (current dominant genotype from ~2012; higher virulence than 2b).
+#
+# The cap gene (ORF2, ~702 nt) encodes the single capsid protein, which is
+# the basis of all published LAMP, PCR, and ELISA assays for PCV2.  It is
+# moderately conserved across genotypes (~75-85% nt identity between 2a and
+# 2d in the N-terminal region), so the sequence set must span all four
+# genotypes to find a pan-PCV2 conserved window.
+#
+# PCV2 is a circular ssDNA virus (Circoviridae); the rolling-circle
+# replication product is a dsDNA intermediate that serves as the LAMP template
+# -- no reverse transcription step is required.
+#
+# After designing, verify readiness before ordering:
+#   lamp-forge lod --sample-volume 1000 --efficiency 0.45 --eluate-volume 100 \
+#     --reaction-input 5
+#   lamp-forge export --input results/pcv2_cap/primer_sets.json --format idt \
+#     --target-label PCV2_cap --out orders/pcv2_cap_idt.csv
+# ============================================================================
+
+target:
+  name: pcv2_cap
+  taxon_id: 85413              # Porcine circovirus 2
+  gene: cap                    # capsid protein (ORF2); alt: "ORF2"
+  max_sequences: 30            # span PCV2a, PCV2b, PCV2c, PCV2d genotypes
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Viruses and host background co-present in swine lymph node / serum / lung:
+  #   pcv1.fasta              - Porcine circovirus 1 (non-pathogenic; 67% nt identity)
+  #   prrsv.fasta             - PRRSV (RNA virus; co-circulates in PRDC)
+  #   porcine_parvovirus.fasta - NC_001718.1; co-infects in PDNS
+  #   sus_scrofa_fragment.fasta - Sus scrofa host DNA from lymph nodes / lung
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.30   # cap gene varies ~15-25% across PCV2a-2d genotypes
+  min_region_length: 200    # cap is ~702 nt; expect 1-3 conserved windows
+
+primer:
+  tm_min: 60.0              # standard LAMP (DNA target; no RT step required)
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0              # PCV2 cap gene is GC-rich (~55-60%)
+  gc_max: 65.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/pcv2_cap
+  top_n: 10
+  generate_html: true
+  generate_csv: true

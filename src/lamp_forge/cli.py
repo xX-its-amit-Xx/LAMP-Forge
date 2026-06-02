@@ -5523,5 +5523,326 @@ def poc_respiratory_trend(
         click.echo(f"Timeline CSV written to {out_csv}")
 
 
+@cli.command(name="swine-respiratory-risk")
+@click.option(
+    "--prrsv",
+    "prrsv",
+    is_flag=True,
+    default=False,
+    help="PRRSV (ORF7, RT-LAMP) positive.",
+)
+@click.option(
+    "--pcv2",
+    "pcv2",
+    is_flag=True,
+    default=False,
+    help="Porcine circovirus 2 (cap gene) positive.",
+)
+@click.option(
+    "--mhp",
+    "mhp",
+    is_flag=True,
+    default=False,
+    help="Mycoplasma hyopneumoniae (p97 adhesin) positive.",
+)
+@click.option(
+    "--input-json",
+    "input_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Read pathogen flags from a JSON file instead of individual flags. "
+        "Expected keys: prrsv, pcv2, mhp (bool). "
+        "Missing keys default to false."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary to a file.",
+)
+def swine_respiratory_risk_cmd(
+    prrsv: bool,
+    pcv2: bool,
+    mhp: bool,
+    input_json: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Interpret a swine respiratory / PRDC LAMP panel as a structured alert.
+
+    Takes the positivity flags for the three pathogens monitored by a
+    BioVind-style Porcine Respiratory Disease Complex (PRDC) panel and
+    returns a structured alert with level, score, interpretation, and
+    recommended action.
+
+    PRRSV (Porcine Reproductive and Respiratory Syndrome Virus) is the most
+    costly endemic swine pathogen (USD 664 M/yr US) and triggers immediate
+    movement restriction.  Co-infection with PCV2 and/or Mhp produces full
+    complex PRDC, with synergistically elevated mortality and production losses.
+
+    Panel targets:
+
+    \b
+        --prrsv   PRRSV ORF7 (RT-LAMP; RNA target)         USD 664 M/yr US
+        --pcv2    PCV2 cap gene (LAMP; DNA target)          EUR 385 M/yr EU
+        --mhp     Mycoplasma hyopneumoniae p97 (LAMP; DNA)  USD >1 B/yr global
+
+    \b
+    Example -- PRRSV + PCV2 co-detected (full complex PRDC):
+        lamp-forge swine-respiratory-risk --prrsv --pcv2
+
+    \b
+    Example -- Mhp alone (endemic enzootic pneumonia):
+        lamp-forge swine-respiratory-risk --mhp
+
+    \b
+    Example -- full panel from a JSON flags file:
+        lamp-forge swine-respiratory-risk --input-json results/resp_flags.json \
+          --out-json results/resp_assessment.json
+    """
+    import json as json_mod
+
+    from lamp_forge.swine_respiratory_risk import (
+        PrdcAlertLevel,
+        PrdcFlags,
+        assess_prdc_risk,
+        flags_from_dict,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    if input_json is not None:
+        with input_json.open(encoding="utf-8") as fh:
+            raw: dict[str, object] = json_mod.load(fh)
+        flags = flags_from_dict(raw)
+    else:
+        flags = PrdcFlags(prrsv=prrsv, pcv2=pcv2, mhp=mhp)
+
+    assessment = assess_prdc_risk(flags)
+
+    click.echo("Swine respiratory / PRDC LAMP panel results:")
+    target_rows = [
+        ("PRRSV", "ORF7", assessment.flags.prrsv),
+        ("PCV2", "cap", assessment.flags.pcv2),
+        ("Mhp", "p97", assessment.flags.mhp),
+    ]
+    for label, gene, positive in target_rows:
+        symbol = "+" if positive else "-"
+        click.echo(f"  {label:<5} ({gene:<3})  [{symbol}]")
+
+    click.echo("")
+
+    level_color = {
+        PrdcAlertLevel.CRITICAL: "red",
+        PrdcAlertLevel.HIGH: "red",
+        PrdcAlertLevel.MODERATE: "yellow",
+        PrdcAlertLevel.LOW: "yellow",
+        PrdcAlertLevel.NEGATIVE: "green",
+    }
+    color = level_color[assessment.alert_level]
+    click.secho(
+        f"Alert level : {assessment.alert_level.value}  (score {assessment.alert_score}/100)",
+        fg=color,
+        bold=(assessment.alert_level in (PrdcAlertLevel.CRITICAL, PrdcAlertLevel.HIGH)),
+    )
+
+    if assessment.movement_restriction_required:
+        click.secho(
+            "  MOVEMENT RESTRICTION REQUIRED: restrict pig movement from this unit "
+            "to PRRSV-negative premises until elimination or stabilisation criteria met.",
+            fg="red",
+            bold=True,
+        )
+
+    if assessment.complex_prdc:
+        click.secho(
+            "  COMPLEX PRDC: 2+ pathogens co-detected; multi-pathogen synergy "
+            "substantially elevates mortality and production losses.",
+            fg="yellow",
+        )
+
+    click.echo("")
+    click.echo("Interpretation:")
+    click.echo(f"  {assessment.interpretation}")
+    click.echo("")
+    click.echo("Recommended action:")
+    click.echo(f"  {assessment.recommended_action}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
+@cli.command(name="swine-respiratory-trend")
+@click.option(
+    "--resp-result",
+    "resp_result_paths",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    metavar="PATH",
+    help=(
+        "JSON file produced by 'lamp-forge swine-respiratory-risk --out-json' for one "
+        "monitoring interval. Repeat once per sample in chronological order (oldest "
+        "first). Mutually exclusive with --csv."
+    ),
+)
+@click.option(
+    "--csv",
+    "csv_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Monitoring-spreadsheet CSV with columns: sample_id, date (optional), "
+        "prrsv, pcv2, mhp. Rows must be in chronological order "
+        "(oldest first). Mutually exclusive with --resp-result."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full trend assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a timeline CSV (one row per monitoring interval) to a file.",
+)
+def swine_respiratory_trend_cmd(
+    resp_result_paths: tuple[Path, ...],
+    csv_path: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Analyse swine respiratory / PRDC trend across a monitoring time series.
+
+    Reads a chronological sequence of swine respiratory LAMP panel results
+    (via JSON files from ``lamp-forge swine-respiratory-risk --out-json`` or
+    a monitoring-spreadsheet CSV) and returns a trajectory assessment showing
+    whether the respiratory situation is EMERGING, STABLE_CLEAR, STABLE_ENDEMIC,
+    or RESOLVING.
+
+    PRRSV first-detection and clearance events are flagged explicitly because
+    they trigger or terminate movement restrictions.
+
+    \b
+    Example -- three JSON files (chronological order):
+        lamp-forge swine-respiratory-trend \
+          --resp-result results/barn-A/2026-01.json \
+          --resp-result results/barn-A/2026-02.json \
+          --resp-result results/barn-A/2026-03.json \
+          --out-json results/barn-A/resp_trend_Q1.json
+
+    \b
+    Example -- monitoring CSV:
+        lamp-forge swine-respiratory-trend \
+          --csv results/barn-A/monitoring.csv \
+          --out-json results/barn-A/resp_trend.json \
+          --out-csv results/barn-A/resp_timeline.csv
+
+    CSV format (header required):
+
+    \b
+        sample_id,date,prrsv,pcv2,mhp
+        BarnA-2026-01,2026-01-15,1,0,0
+        BarnA-2026-02,2026-02-15,1,1,0
+    """
+    import sys
+
+    from lamp_forge.swine_respiratory_trend import (
+        SwineRespTrendDirection,
+        analyse_swine_resp_trend,
+        records_from_csv,
+        records_from_resp_json,
+        write_trend_csv,
+        write_trend_json,
+    )
+
+    if resp_result_paths and csv_path:
+        click.secho("Error: --resp-result and --csv are mutually exclusive.", fg="red", err=True)
+        sys.exit(2)
+
+    if not resp_result_paths and csv_path is None:
+        click.secho("Error: supply either --resp-result (repeatable) or --csv.", fg="red", err=True)
+        sys.exit(2)
+
+    if csv_path is not None:
+        try:
+            records = records_from_csv(csv_path)
+        except ValueError as exc:
+            click.secho(f"CSV error: {exc}", fg="red", err=True)
+            sys.exit(2)
+    else:
+        try:
+            records = records_from_resp_json(list(resp_result_paths))
+        except ValueError as exc:
+            click.secho(f"JSON error: {exc}", fg="red", err=True)
+            sys.exit(2)
+
+    if not records:
+        click.secho("Error: no records loaded.", fg="red", err=True)
+        sys.exit(2)
+
+    trend = analyse_swine_resp_trend(records)
+
+    click.echo(f"Swine respiratory / PRDC trend  [{trend.n_samples} sample(s)]")
+    click.echo("")
+
+    dir_color = {
+        SwineRespTrendDirection.EMERGING: "red",
+        SwineRespTrendDirection.STABLE_CLEAR: "green",
+        SwineRespTrendDirection.STABLE_ENDEMIC: "yellow",
+        SwineRespTrendDirection.RESOLVING: "green",
+        SwineRespTrendDirection.INSUFFICIENT_DATA: "yellow",
+    }
+    click.secho(
+        f"Trajectory    : {trend.direction.value}",
+        fg=dir_color[trend.direction],
+        bold=(trend.direction is SwineRespTrendDirection.EMERGING),
+    )
+
+    if trend.prrsv_newly_detected:
+        click.secho(
+            "  PRRSV NEWLY DETECTED: movement restriction required immediately.",
+            fg="red",
+            bold=True,
+        )
+    if trend.prrsv_cleared:
+        click.secho(
+            "  PRRSV CLEARED in most recent sample: maintain restrictions until "
+            "3 consecutive negatives confirmed.",
+            fg="yellow",
+        )
+    click.echo(f"  Worst alert level: {trend.worst_alert_level.value}")
+    click.echo("")
+    click.echo(f"Interpretation: {trend.interpretation}")
+    click.echo("")
+    click.echo(f"Recommended action: {trend.recommended_action}")
+
+    if out_json is not None:
+        write_trend_json(trend, out_json)
+        click.echo(f"\nTrend assessment written to {out_json}")
+    if out_csv is not None:
+        write_trend_csv(trend, out_csv)
+        click.echo(f"Timeline CSV written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
