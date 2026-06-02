@@ -5308,3 +5308,230 @@ the BioID instrument build.
   *Vet Clin Food Anim* 28(1):57-82. doi:10.1016/j.cvfa.2012.01.001
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 34 -- Human Respiratory Syncytial Virus (hRSV) via RT-LAMP (human point-of-care)
+
+**Goal.** Detect human RSV broadly across both RSV-A and RSV-B subtypes from
+a nasal swab at a rural urgent care clinic, pharmacy, or telemedicine-adjacent
+facility -- fast enough to guide antiviral therapy decisions before the patient
+leaves the building.
+
+**Why it's interesting.** hRSV is the **leading cause of acute lower
+respiratory tract illness in infants** globally -- an estimated 33 million
+RSV-associated ALRI episodes and 3.6 million hospitalisations per year in
+children under 5 (Shi et al. Lancet 2017).  In older adults and
+immunocompromised patients, RSV causes disease comparable to influenza A.
+From 2023 onward, two RSV vaccines (Abrysvo, Arexvy) have been approved for
+older adults, and a maternal vaccine (Abrysvo) for infant protection --
+creating a new clinical-decision point: does this patient need antiviral
+nirsevimab (monoclonal antibody, paediatric) or is a respiratory illness due to
+influenza A (oseltamivir)?  A portable LAMP panel that simultaneously reports
+hRSV + influenza A + SARS-CoV-2 resolves the differential in under 60 minutes
+at a BioVind-style bedside device, directing the right antiviral to the right
+patient within the treatment window.
+
+**Why this is a BioVind fit.**  hRSV has historically been under-tested at
+point-of-care because rapid antigen tests have only moderate sensitivity
+(~80%) and PCR is not available outside of hospital labs.  A portable
+RT-LAMP panel changes this equation for rural clinics, urgent cares, and
+even home-based telehealth monitoring -- exactly BioVind's POC vertical.
+
+**Two subtypes, one assay.**  RSV-A and RSV-B circulate simultaneously each
+winter season, with inter-subtype nucleotide identity of ~77% in the N gene.
+A pan-RSV design requires both subtypes in the input sequence set.  The N gene
+(nucleocapsid, ~1203 nt CDS) is the most conserved coding region across both
+subtypes -- more so than the fusion (F) or attachment (G) genes -- and is the
+basis of published one-step RT-LAMP assays (Nie et al. 2017; Zhang et al. 2021).
+
+**hRSV is a negative-sense ssRNA pneumovirus** (Pneumoviridae,
+Orthopneumovirus) -- so detection requires **RT-LAMP**.  One-step RT-LAMP
+(Bst 2.0 WarmStart + NEB RTx at 63-65 degC) delivers a yes/no result in under
+30 minutes, fully compatible with the BioVind BioID portable platform.
+
+**Target.** N gene (nucleocapsid), anchoring on RSV-A (NCBI taxon 11250) and
+adding RSV-B accessions explicitly for cross-subtype conservation.  Use the
+ready-made config at `config/hrsv_N_gene.yaml`, or paste the block below:
+
+```yaml
+target:
+  name: hrsv_N_gene
+  taxon_id: 11250          # Human orthopneumovirus (RSV-A anchor species)
+  accessions:
+    # Add RSV-B accessions for pan-RSV cross-subtype conservation.
+    # Representative starting points:
+    #   AY353550.1   RSV-B prototype strain B1 (N-gene region)
+    #   KJ627327.1   RSV-B contemporary BA9 genotype
+    # Pull additional accessions spanning RSV-A clades A1, A2, A2b and
+    # RSV-B lineages BA7-BA10 for full pan-RSV coverage.
+    []
+  gene: N                  # nucleocapsid protein; most conserved across RSV-A and RSV-B
+  max_sequences: 35        # span RSV-A clades A1/A2/A2b + RSV-B BA lineages
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85   # tight -- hMPV shares Pneumoviridae family
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 25
+  entropy_threshold: 0.30        # RSV N gene varies ~23% between subtypes; RNA-virus drift
+  min_region_length: 200
+
+primer:
+  tm_min: 63.0                   # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                   # RSV N gene ~37-42% GC; AT-rich pneumovirus
+  gc_max: 55.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/hrsv_N_gene
+  top_n: 10
+  generate_html: true
+  generate_csv: true
+```
+
+**Key config notes.**
+
+- `primer.tm_min: 63.0` -- one-step RT-LAMP at 63-65 degC; same rationale as
+  PRRSV (Recipe 11), AIV (Recipe 12), FMDV (Recipe 14), NDV (Recipe 18), PEDV
+  (Recipe 27), and CSFV (Recipe 29).  hRSV is negative-sense ssRNA; the RT
+  enzyme must remain co-active with Bst polymerase at 63-65 degC.
+- `conservation.entropy_threshold: 0.30` -- RSV-A and RSV-B share only ~77%
+  N-gene nt identity.  A threshold below 0.20 bits would be too strict for
+  cross-subtype conservation analysis; 0.30 bits finds windows conserved across
+  both subtypes while excluding the highly variable central portion of the N gene.
+- `gc_min: 35.0, gc_max: 55.0` -- the hRSV N gene is approximately 37-42% GC
+  (RSV is notably AT-rich relative to most human respiratory RNA viruses).  The
+  20-unit window accommodates inter-subtype GC variation without admitting primers
+  too far outside the primer3 design space.
+- `off_targets.min_identity_threshold: 0.85` -- human metapneumovirus (hMPV,
+  Pneumoviridae) shares the paramyxovirus-like nucleocapsid fold with RSV.  At
+  0.85, the threshold is strict enough to flag hMPV cross-reactivity risk while
+  permitting the RSV-A/B diversity needed for pan-RSV coverage.
+
+**Off-target panel.** Co-circulating respiratory pathogens and human host DNA
+from nasal swab:
+
+| File | Source | Why |
+|---|---|---|
+| `hmpv.fasta` | Human metapneumovirus (NC_004148.2) | Closest relative; Pneumoviridae family; shares N-protein structural motifs |
+| `hpiv1.fasta` | Human parainfluenza virus 1 (NC_003461.1) | Co-circulating Paramyxoviridae; causes croup in same age group as RSV |
+| `hpiv3.fasta` | Human parainfluenza virus 3 (NC_001796.2) | Most common PIV; bronchiolitis in infants overlaps with RSV presentation |
+| `influenza_a_h1n1.fasta` | Influenza A H1N1 *(representative segments)* | Primary co-circulating respiratory pathogen in RSV season; separate panel target |
+| `sars_cov_2.fasta` | SARS-CoV-2 N gene *(representative)* | Co-circulating respiratory pathogen; separate panel target (Recipe 2) |
+| `human_chr_fragment.fasta` | Subset of GRCh38 chr1 | Host DNA from nasal swab; dominant background matrix |
+
+**Expected output.** The N gene (~1203 nt) typically yields 2-4 conserved
+windows across RSV-A and RSV-B.  With entropy_threshold 0.30, expect one major
+window in the N-terminal RNA-binding domain (~nt 50-400 of the N CDS) and one
+in the C-terminal region (~nt 800-1100).  Published RT-LAMP primer sets (Nie
+et al. 2017) land in the N-terminal domain -- a top-scoring LAMP-Forge set
+should co-localise there.  Zero flagged off-target hits are expected against
+hMPV at 0.85 identity.
+
+**Verify RT-LAMP readiness.**
+
+```bash
+lamp-forge rt-check \
+  --input results/hrsv_N_gene/primer_sets.json \
+  --na-type rna \
+  --out-csv results/hrsv_N_gene/rt_check.csv
+```
+
+Sets marked **NOT OPTIMIZED** have at least one core primer below 63.0 degC.
+Because `primer.tm_min: 63.0` is already set, all sets should pass -- verify
+before ordering.
+
+**Estimate LOD before ordering** (nasal swab in 400 uL VTM, 50% RNA
+extraction, 50 uL eluate, 5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 400 \
+  --efficiency 0.50 \
+  --eluate-volume 50 \
+  --reaction-input 5
+```
+
+Effective sample = 400 x 0.5 x (5/50) = 20 uL per reaction.  LOD_95 approx
+150 copies/mL of VTM.  hRSV in symptomatic patients typically ranges from
+10^3 to 10^7 copies/mL in nasal washes, providing orders-of-magnitude
+headroom above the achievable LOD.
+
+**Multiplex with other POC respiratory targets.** hRSV, influenza A, and
+SARS-CoV-2 are the three major viral causes of lower respiratory tract illness
+in winter.  Design each target independently, then combine:
+
+```bash
+lamp-forge panel \
+  --set RSV=results/hrsv_N_gene/primer_sets.json \
+  --set IAV=results/influenza_a_M/primer_sets.json \
+  --set SARS2=results/sars_cov_2_N/primer_sets.json \
+  --top-per-target 5 \
+  --dimer-dg-threshold -5.0 \
+  --out results/poc_respiratory_3plex
+```
+
+Then generate the pooling sheet (3 RNA targets = 132 uM minimum; request
+200 uM resuspension from IDT or Twist) and export to vendor:
+
+```bash
+lamp-forge pool \
+  --panel results/poc_respiratory_3plex/panel.json \
+  --stock-conc 200 \
+  --total-volume 500 \
+  --out results/poc_respiratory_3plex/pool_sheet.csv
+
+lamp-forge export \
+  --input results/hrsv_N_gene/primer_sets.json \
+  --format idt \
+  --target-label RSV_N \
+  --out orders/hrsv_N_idt_order.csv
+```
+
+**Confirm TTP within the BioVind device window.**
+
+```bash
+lamp-forge ttp --preset rt-lamp --device-window 60
+```
+
+At LOD_95 (~3 copies/reaction), TTP is expected around 50-60 min for
+one-step RT-LAMP; clinical specimens at 10^3+ copies/reaction read out in
+30-45 min, well within the 60-min BioVind BioID window.
+
+**Wet-lab note.** The nasal swab matrix (mucus, human genomic DNA) is
+moderately inhibitory.  Validate with a spiked VTM extraction protocol
+(e.g. MagMAX CORE Nucleic Acid Purification Kit) and confirm LOD using
+contrived specimens at 10^2-10^4 copies/mL before clinical deployment.
+Note that hRSV samples may require a lysis step at 95 degC for 5 min to
+denature the negative-sense genome before the RT step when using column-free
+extraction.
+
+**References.**
+
+- Shi T, McAllister DA, O'Brien KL et al. (2017) Global, regional, and
+  national disease burden estimates of acute lower respiratory infections due
+  to respiratory syncytial virus in young children in 2015: a systematic review
+  and modelling study.  *Lancet* 390(10098):946-958.
+  doi:10.1016/S0140-6736(17)30938-8
+- Nie K, Zhang W, Han J et al. (2017) Rapid and sensitive detection of human
+  respiratory syncytial virus using one-step reverse transcription loop-mediated
+  isothermal amplification.  *Arch Virol* 162(4):1077-1083.
+  doi:10.1007/s00705-016-3182-3
+- Zhang Y, Chen Q, Zhang X et al. (2021) Rapid detection of human respiratory
+  syncytial virus by reverse transcription loop-mediated isothermal amplification.
+  *J Clin Lab Anal* 35(3):e23687. doi:10.1002/jcla.23687
+- Zlateva KT, Lemey P, Moes E et al. (2004) Genetic variability and molecular
+  evolution of the human respiratory syncytial virus subgroup B attachment G
+  protein.  *J Virol* 78(9):4675-4683. doi:10.1128/JVI.78.9.4675-4683.2004
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

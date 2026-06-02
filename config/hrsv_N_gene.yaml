@@ -1,0 +1,88 @@
+# LAMP-Forge config: Human Respiratory Syncytial Virus (hRSV) N-gene RT-LAMP
+# ============================================================================
+# Target: Pan-RSV detection via the N (nucleocapsid) gene
+# Why this target: Human RSV is the leading cause of acute lower respiratory
+# tract illness in infants (<1 year) and the most common cause of infant
+# hospitalisation for respiratory illness globally (estimated 33 million
+# episodes / year; Shi et al. Lancet 2017).  It also causes severe illness in
+# adults aged >65 and immunocompromised patients -- the populations most often
+# seen at BioVind's target POC sites (rural urgent care, telemedicine-adjacent
+# clinics, resource-limited hospitals).
+#
+# Two major subtypes circulate simultaneously: RSV-A and RSV-B (~77% N-gene nt
+# identity; Zlateva et al. 2004).  A pan-RSV assay must detect both, making the
+# N gene (~1203 nt CDS) the correct target: it is the most conserved coding
+# region across both subtypes and is the basis of published one-step RT-LAMP
+# assays (Nie et al. 2017; Zhang et al. 2021).
+#
+# hRSV is a negative-sense ssRNA paramyxovirus (Pneumoviridae); detection
+# requires RT-LAMP.  One-step RT-LAMP (Bst 2.0 WarmStart + NEB RTx) at
+# 63-65 degC delivers a positive result in under 30 minutes, fully compatible
+# with BioVind portable platform deployment at a clinic or pharmacy.
+#
+# Validate RT-LAMP readiness after design:
+#   lamp-forge rt-check --input results/hrsv_N_gene/primer_sets.json --na-type rna
+#
+# Estimate LOD for nasal swab in 400 uL VTM, 50% RNA extraction, 50 uL eluate,
+# 5 uL to reaction:
+#   lamp-forge lod --sample-volume 400 --efficiency 0.50 \
+#     --eluate-volume 50 --reaction-input 5
+# => LOD_95 ~150 copies/mL VTM; well within the range of RSV in symptomatic patients.
+#
+# POC panel note: hRSV is the natural sixth target in a human POC respiratory
+# panel alongside SARS-CoV-2 (Recipe 2) and influenza A (Recipe 12).  After
+# designing each target independently, combine with lamp-forge panel to screen
+# for cross-assay compatibility before ordering.
+# ============================================================================
+
+target:
+  name: hrsv_N_gene
+  taxon_id: 11250              # Human orthopneumovirus (RSV-A anchor species)
+  accessions:
+    # RSV-A circulates with RSV-B (~77% N-gene nt identity); add RSV-B accessions
+    # for cross-subtype conservation analysis.  Representative starting accessions:
+    #   AY353550.1   RSV-B prototype strain B1 (N gene region)
+    #   KJ627327.1   RSV-B contemporary BA9 genotype
+    # Pull additional accessions spanning RSV-A clades A1, A2, A2b and RSV-B
+    # lineages BA7-BA10 for full pan-RSV coverage.
+    []
+  gene: N                      # nucleocapsid protein; most conserved across RSV-A and RSV-B
+  max_sequences: 35            # span RSV-A clades A1/A2/A2b + RSV-B BA lineages
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Key respiratory off-targets for a human POC swab context:
+  #   hmpv.fasta                   - Human metapneumovirus (NC_004148.2); closest relative
+  #                                   in Pneumoviridae; ~30-40% N-gene aa identity
+  #   hpiv1.fasta                  - Human parainfluenza virus 1 (NC_003461.1); co-circulating
+  #   hpiv3.fasta                  - Human parainfluenza virus 3 (NC_001796.2); co-circulating
+  #   influenza_a_h1n1.fasta       - Influenza A H1N1 (NC_026431-NC_026439 segments);
+  #                                   most common respiratory co-circulator; separate LAMP channel
+  #   sars_cov_2.fasta             - SARS-CoV-2 (co-circulates as separate panel target)
+  #   human_chr_fragment.fasta     - Subset of GRCh38 chr1; dominant background in nasal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # tight -- hMPV is Pneumoviridae family; prevent false flags
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 25              # RNA virus: narrower window catches constrained N-gene blocks
+  entropy_threshold: 0.30     # RSV N gene is constrained but varies ~23% between subtypes
+  min_region_length: 200       # N CDS is ~1203 nt -- expect 2-4 conserved windows
+
+primer:
+  tm_min: 63.0                 # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                 # RSV N gene is ~37-42% GC; margins for inter-subtype diversity
+  gc_max: 55.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/hrsv_N_gene
+  top_n: 10
+  generate_html: true
+  generate_csv: true
