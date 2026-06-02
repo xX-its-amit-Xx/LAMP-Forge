@@ -1,0 +1,70 @@
+# Cartridge manifest -- 6-channel oilfield MIC/souring BioID SKU.
+#
+# All-DNA LAMP panel (no RT step required) targeting the five microbial
+# guilds responsible for microbiologically-influenced corrosion (MIC) and
+# reservoir souring in oil and gas produced-water circuits, plus a universal
+# 16S rRNA internal-extraction control.
+#
+# Sample type: produced water or biofilm swab eluent (1 mL).
+#
+# To populate the per-target primer_sets.json files, run the LAMP-Forge
+# pipeline against each config in sequence, e.g.:
+#
+#   for cfg in srb_dsrB methanogen_mcrA irb_omcA apb_fthfs nrb_narG general_16s; do
+#     lamp-forge run config/${cfg}.yaml --out-dir results/${cfg}
+#   done
+#
+# Then build the full cartridge in one shot:
+#
+#   lamp-forge cartridge config/cartridges/cartridge_mic_oilfield_6ch.yaml \
+#     --out-dir results/mic_oilfield_6ch_v1
+#
+# Pool stoichiometry note: 6 channels × 44 µM/channel = 264 µM minimum stock.
+# The manifest is set to 300 µM to provide a 14% excess for pipetting losses.
+
+cartridge_id: mic_oilfield_6ch_v1
+chemistry: lamp              # all-DNA panel; no reverse-transcriptase step
+
+max_channels: 6
+
+extraction:
+  sample_volume_ul: 1000.0   # 1 mL produced water or biofilm swab eluent
+  extraction_efficiency: 0.50
+  eluate_volume_ul: 100.0
+  reaction_input_ul: 5.0
+
+device_window_min: 60.0      # BioVind BioID 30-60 min run
+
+pool:
+  stock_conc_um: 300.0       # 6 channels × 44 µM = 264 µM min; 300 µM provides headroom
+  total_pool_volume_ul: 500.0
+
+vendor: idt
+
+# 6 channels: 5 MIC-guild detect + 1 universal 16S control.
+# Each sets_json path is resolved relative to this manifest file's directory.
+targets:
+  - label: SRB_dsrB
+    sets_json: ../../results/srb_dsrB/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: MCR_mcrA
+    sets_json: ../../results/methanogen_mcrA/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: IRB_omcA
+    sets_json: ../../results/irb_omcA/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: APB_fthfs
+    sets_json: ../../results/apb_fthfs/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: NRB_narG
+    sets_json: ../../results/nrb_narG/primer_sets.json
+    target_na: dna
+    role: detect
+  - label: CTRL_16S
+    sets_json: ../../results/general_16s/primer_sets.json
+    target_na: dna
+    role: control
