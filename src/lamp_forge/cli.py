@@ -5026,5 +5026,166 @@ def bov_enteric_trend(
         click.echo(f"CSV timeline written to {out_csv}")
 
 
+@cli.command(name="poc-respiratory-risk")
+@click.option(
+    "--hrsv", "hrsv", is_flag=True, default=False, help="hRSV (N gene, pan-RSV-A/B) positive."
+)
+@click.option(
+    "--iav", "iav", is_flag=True, default=False, help="Influenza A (M gene, pan-IAV) positive."
+)
+@click.option("--sars2", "sars2", is_flag=True, default=False, help="SARS-CoV-2 (N gene) positive.")
+@click.option(
+    "--input-json",
+    "input_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Read pathogen flags from a JSON file instead of individual flags. "
+        "Expected keys: hrsv, iav, sars2 (bool). "
+        "Missing keys default to false."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary to a file.",
+)
+def poc_respiratory_risk(
+    hrsv: bool,
+    iav: bool,
+    sars2: bool,
+    input_json: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Interpret a three-target respiratory RT-LAMP panel as a clinical alert.
+
+    Resolves the 'which antiviral?' differential for acute lower respiratory
+    illness by interpreting a BioVind-style portable panel of three RT-LAMP
+    assays: human RSV (hRSV), Influenza A (pan-IAV), and SARS-CoV-2.
+
+    Detection of IAV or SARS-CoV-2 triggers antiviral-indicated guidance;
+    hRSV detection triggers RSV-specific guidance (nirsevimab for eligible
+    infants; supportive care for adults). Co-infection of any two or three
+    targets yields a HIGH alert with combined antiviral recommendations.
+
+    This command covers the respiratory sub-panel described in Recipe 34 of
+    the cookbook (human RSV via RT-LAMP, POC vertical).  For the full five-
+    target POC panel (MTB, CDiff, SARS2, Flu A, GAS) use 'lamp-forge poc-risk'.
+
+    Panel targets:
+    \b
+        --hrsv    Human RSV (N gene, pan-RSV-A/B)    RT-LAMP (Recipe 34)
+        --iav     Influenza A (M gene, pan-IAV)       RT-LAMP (Recipe 12)
+        --sars2   SARS-CoV-2 (N gene)                 RT-LAMP (Recipe 2)
+
+    \b
+    Example -- hRSV detected in an infant presenting with bronchiolitis:
+        lamp-forge poc-respiratory-risk --hrsv
+
+    \b
+    Example -- IAV detected, 30 hours into illness (oseltamivir window open):
+        lamp-forge poc-respiratory-risk --iav
+
+    \b
+    Example -- SARS-CoV-2 + hRSV co-infection in an elderly patient:
+        lamp-forge poc-respiratory-risk --sars2 --hrsv
+
+    \b
+    Example -- full panel from a JSON flags file:
+        lamp-forge poc-respiratory-risk \
+          --input-json results/resp_flags.json \
+          --out-json results/resp_assessment.json
+    """
+    import json as json_mod
+
+    from lamp_forge.poc_respiratory_risk import (
+        PocRespAlertLevel,
+        PocRespFlags,
+        assess_poc_resp_risk,
+        flags_from_dict,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    if input_json is not None:
+        with input_json.open(encoding="utf-8") as fh:
+            raw: dict[str, object] = json_mod.load(fh)
+        flags = flags_from_dict(raw)
+    else:
+        flags = PocRespFlags(hrsv=hrsv, iav=iav, sars2=sars2)
+
+    assessment = assess_poc_resp_risk(flags)
+
+    # --- Panel table ----------------------------------------------------------
+    click.echo("Respiratory differential RT-LAMP panel results:")
+    target_rows = [
+        ("hRSV", "N gene", assessment.flags.hrsv),
+        ("IAV", "M gene", assessment.flags.iav),
+        ("SARS2", "N gene", assessment.flags.sars2),
+    ]
+    for label, gene, positive in target_rows:
+        symbol = "+" if positive else "-"
+        click.echo(f"  {label:<6} ({gene:<6})  [{symbol}]")
+
+    click.echo("")
+
+    # --- Alert level (colour-coded) ------------------------------------------
+    level_color = {
+        PocRespAlertLevel.HIGH: "red",
+        PocRespAlertLevel.MODERATE: "yellow",
+        PocRespAlertLevel.LOW: "yellow",
+        PocRespAlertLevel.NEGATIVE: "green",
+    }
+    color = level_color[assessment.alert_level]
+    click.secho(
+        f"Alert level : {assessment.alert_level.value}  (score {assessment.alert_score}/100)",
+        fg=color,
+        bold=(assessment.alert_level is PocRespAlertLevel.HIGH),
+    )
+
+    if assessment.antiviral_indicated:
+        click.secho(
+            "  Antiviral treatment indicated -- check treatment window before prescribing.",
+            fg="yellow",
+        )
+
+    if assessment.rsv_indicated:
+        click.secho(
+            "  hRSV detected: assess nirsevimab eligibility for paediatric patients.",
+            fg="yellow",
+        )
+
+    if assessment.dual_infection:
+        click.secho(
+            "  Dual/triple respiratory viral infection -- combined clinical management required.",
+            fg="red",
+        )
+
+    click.echo("")
+    click.echo("Interpretation:")
+    click.echo(f"  {assessment.interpretation}")
+    click.echo("")
+    click.echo("Recommended action:")
+    click.echo(f"  {assessment.recommended_action}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
