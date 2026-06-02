@@ -1,0 +1,73 @@
+# LAMP-Forge config: Infectious Bursal Disease Virus (IBDV) VP2 RT-LAMP
+# ============================================================================
+# Target: Broad IBDV detection via the VP2 (outer capsid protein) gene
+# Why this target: Infectious Bursal Disease Virus (IBDV; Gumboro disease) is
+# a major WOAH-listed immunosuppressive pathogen of commercial poultry.  Very
+# virulent (vvIBDV) strains cause 60-70% direct mortality in broiler and layer
+# chicks aged 3-6 weeks; classic strains cause immunosuppression that amplifies
+# secondary infections (E. coli, Marek's disease, IBV) and vaccine failure.
+# Global economic losses exceed USD 2 billion per year.  A BioVind portable
+# assay enabling on-farm, same-hour detection supports both outbreak response
+# and routine surveillance of vaccinated flocks.
+#
+# VP2 (~1350 nt) encodes the major outer capsid protein and the group-specific
+# antigen.  The conserved N-terminal and C-terminal structural domains are
+# the primer landing zones for pan-IBDV detection; the hypervariable region
+# (HVR, aa 206-350) is avoided.  VP2 is the basis of commercial IBDV ELISA
+# kits and published IBDV RT-LAMP assays (Ye et al. 2010).
+#
+# IBDV is a double-stranded RNA (dsRNA) birnavirus.  After endogenous
+# denaturation during chaotropic lysis, single-stranded RNA template is
+# accessible to RTx reverse transcriptase.  One-step RT-LAMP (Bst 2.0
+# WarmStart + NEB RTx) at 63-65 degC delivers a result in under 30 minutes,
+# compatible with the BioVind portable platform.
+#
+# IBDV co-circulates with AIV (Recipe 12), NDV (Recipe 18), and IBV in
+# poultry houses.  The four-target poultry panel (Recipe 30) combines all
+# four assays using lamp-forge panel.
+#
+# After designing, verify RT-LAMP readiness before ordering:
+#   lamp-forge rt-check --input results/ibdv_VP2/primer_sets.json --na-type rna
+# ============================================================================
+
+target:
+  name: ibdv_VP2
+  taxon_id: 12227              # Infectious bursal disease virus (NCBI taxon)
+  gene: VP2                    # outer capsid protein; most conserved broad-detection target
+  max_sequences: 30            # span classic strains + very virulent (vvIBDV) + variant strains
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Poultry pathogens and host background that must not cross-react:
+  #   birnavirus_anemia.fasta        - Chicken anaemia virus (not a birnavirus; DNA virus)
+  #   iav_h5n1.fasta                 - Avian influenza A H5N1; co-circulates in affected flocks
+  #   ndv_M_gene.fasta               - NDV; must not cross-flag in the IBDV channel
+  #   ibv_N.fasta                    - Infectious bronchitis virus; co-circulates
+  #   gallus_gallus_fragment.fasta   - GalGal7b chr1 subset; host DNA from bursal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.80  # birnavirus family is distant from other avian viruses
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 25              # dsRNA virus: moderate window catches constrained capsid blocks
+  entropy_threshold: 0.25     # VP2 structural domains are under strong capsid-assembly
+                               # constraint; stricter than typical ss-RNA virus defaults
+  min_region_length: 200       # VP2 is ~1350 nt; target the conserved N-terminal block
+
+primer:
+  tm_min: 63.0                 # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 40.0                 # IBDV VP2 is ~44-48% GC; 40% gives margin for AT-rich primers
+  gc_max: 58.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/ibdv_VP2
+  top_n: 10
+  generate_html: true
+  generate_csv: true

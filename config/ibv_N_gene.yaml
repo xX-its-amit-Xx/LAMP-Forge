@@ -1,0 +1,72 @@
+# LAMP-Forge config: Infectious Bronchitis Virus (IBV) N-gene RT-LAMP
+# ============================================================================
+# Target: Pan-IBV detection via the N (nucleocapsid protein) gene
+# Why this target: Infectious Bronchitis Virus (IBV; Avian gammacoronavirus)
+# is the most prevalent avian respiratory pathogen globally, causing respiratory
+# signs, egg production losses (20-50%), and nephropathogenic syndromes.
+# IBV is not WOAH-listed as a Tier 1 pathogen, but its economic impact is
+# enormous: it interacts synergistically with E. coli, NDV, and Mycoplasma
+# to cause the "infectious bronchitis complex."  More critically, IBV
+# immunosuppression worsens outcomes in flocks already compromised by IBDV
+# (Gumboro), making rapid co-detection on the same BioVind cartridge
+# (Recipe 30) a clinical priority.
+#
+# IBV has dozens of serotypes (Massachusetts, 793B/4/91, QX, D388, Georgia 08,
+# Italy 02, etc.) worldwide with as little as 40% S1-gene nucleotide identity
+# between distant serotypes.  The N gene (nucleocapsid, ~1230 nt) is the most
+# conserved coding region across all IBV serotypes and is the basis of pan-IBV
+# RT-PCR assays (Cavanagh et al. 1999).  The N-gene assay detects all IBV
+# serotypes but does not resolve them; S1-gene sequencing is needed for
+# serotype-specific diagnosis and vaccine-match assessment.
+#
+# IBV is a positive-sense ssRNA gammacoronavirus; detection requires RT-LAMP.
+# One-step RT-LAMP (Bst 2.0 WarmStart + NEB RTx) at 63-65 degC delivers a
+# result in under 30 minutes, compatible with the BioVind portable platform.
+#
+# IBV co-circulates with AIV (Recipe 12), NDV (Recipe 18), and IBDV.  The
+# four-target poultry panel (Recipe 30) combines all four assays.
+#
+# After designing, verify RT-LAMP readiness before ordering:
+#   lamp-forge rt-check --input results/ibv_N_gene/primer_sets.json --na-type rna
+# ============================================================================
+
+target:
+  name: ibv_N_gene
+  taxon_id: 11120              # Avian infectious bronchitis virus (NCBI taxon)
+  gene: N                      # nucleocapsid protein; most conserved across all IBV serotypes
+  max_sequences: 35            # span Mass, 793B/4/91, QX, D388, Georgia 08, and other serotypes
+  email: you@your-inst.edu    # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Co-circulating avian pathogens and host background from oropharyngeal swab:
+  #   iav_h5n1.fasta                 - Avian influenza A; most important co-detection target
+  #   ndv_M_gene.fasta               - Newcastle disease virus; must not cross-flag
+  #   avian_metapneumovirus.fasta    - NC_007652.1; AMPV, same respiratory niche
+  #   human_coronavirus_229e.fasta   - HCoV-229E; alphacoronavirus; confirm gamma-specificity
+  #   gallus_gallus_fragment.fasta   - GalGal7b chr1 subset; host DNA from tracheal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # tight -- gammacoronavirus N gene shares structural motifs
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 25              # RNA virus: narrower window for structurally constrained blocks
+  entropy_threshold: 0.30     # IBV N gene is moderately conserved; RNA-virus serotype drift
+  min_region_length: 200       # N CDS is ~1230 nt; expect 2-4 conserved windows
+
+primer:
+  tm_min: 63.0                 # RT-LAMP one-step: co-activity floor for NEB RTx / Bst 2.0
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 35.0                 # IBV N gene ~37-42% GC (gammacoronavirus is AT-leaning)
+  gc_max: 55.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 150
+
+output:
+  dir: results/ibv_N_gene
+  top_n: 10
+  generate_html: true
+  generate_csv: true
