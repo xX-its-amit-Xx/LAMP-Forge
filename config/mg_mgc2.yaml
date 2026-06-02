@@ -1,0 +1,142 @@
+# LAMP-Forge config: Mycoplasma gallisepticum mgc2 LAMP (poultry biosecurity)
+# =============================================================================
+# Target: Mycoplasma gallisepticum (mgc2 cytadherence gene) -- the leading
+#         mycoplasmal pathogen of commercial poultry worldwide.
+#
+# Why this target:
+#   Mycoplasma gallisepticum (MG) causes chronic respiratory disease (CRD)
+#   in chickens and infectious sinusitis in turkeys.  It is:
+#     - The most economically significant Mycoplasma in commercial poultry,
+#       costing the US industry an estimated >$780 million annually
+#     - WOAH-listed as a trade-impacting disease in some bilateral agreements
+#     - The primary cause of flock-level egg production drops (15-20%) and
+#       air-sac lesion condemnations in broilers
+#     - A co-factor that amplifies the severity of Newcastle Disease Virus
+#       (NDV), Infectious Bronchitis Virus (IBV), and Avian Influenza (AIV)
+#       infections through ciliary damage and immune modulation
+#   Portable on-farm detection of MG on a BioVind-style LAMP platform enables
+#   quarantine and movement decisions before birds are transported to new
+#   premises -- preventing flock-to-flock spread, which is the dominant MG
+#   transmission route in commercial integrations.
+#
+#   MG is a chromosomal DNA target -- no reverse transcription is required.
+#   Standard DNA-LAMP (Bst 2.0 at 60-65 degC) gives a result in under 30 min,
+#   fully compatible with a BioVind-style portable platform.
+#
+# mgc2 rationale:
+#   The mgc2 gene encodes the Mycoplasma gallisepticum cytadherence-related
+#   protein 2 (MGC2), a surface lipoprotein involved in tracheal epithelial
+#   attachment.  It was the target used in the first published MG LAMP assay
+#   (Goto et al. 2003, Vet Microbiol 97:139-149) and has been validated in
+#   multiple subsequent studies.  Key properties:
+#     - Single-copy, chromosomally encoded gene (unlike the pvpA multigene
+#       family, which undergoes phase variation and has ~70 paralogues)
+#     - Conserved across MG strains spanning the major genetic clusters
+#       (Rlow, S6, F-strain vaccine, AP3AS field strains)
+#     - Absent from Mycoplasma synoviae (MS) and other avian Mycoplasma species
+#       that share the respiratory niche, enabling species-level specificity
+#     - The NCBI gene annotation in MG strain R(low) is mgc2 (locus tag NCGM_1304)
+#
+# GC content note:
+#   Mycoplasma gallisepticum has one of the lowest genomic GC contents of any
+#   avian pathogen: ~30.9-31.5% (vs Gallus gallus ~41%, Mycoplasma synoviae
+#   ~30.6%).  This critically constrains primer design:
+#     - gc_min must be well below the standard 40% (set to 25% here)
+#     - gc_max capped at 45% to avoid primers that preferentially bind
+#       GC-richer commensal off-targets in the avian respiratory tract
+#   This GC challenge is the primary design risk for this assay -- the pipeline
+#   may report fewer primer candidates than for higher-GC targets.  If zero
+#   sets are returned, lower gc_min to 20.0 and re-run.
+#
+# Poultry panel integration:
+#   MG adds a mycoplasmal fifth channel to the four-target poultry biosecurity
+#   panel (AIV, NDV, IBDV, IBV -- see Recipe 30).  After designing all five
+#   targets independently:
+#     lamp-forge panel \
+#       --set AIV=results/influenza_a_M/primer_sets.json \
+#       --set NDV=results/ndv_M_gene/primer_sets.json \
+#       --set IBDV=results/ibdv_VP2/primer_sets.json \
+#       --set IBV=results/ibv_N_gene/primer_sets.json \
+#       --set MG=results/mg_mgc2/primer_sets.json \
+#       --top-per-target 5 \
+#       --out results/poultry_5plex_panel
+#   The MG channel detects the bacterial pathogen that often causes secondary
+#   damage enabling viral disease escalation; a combined AIV + MG positive
+#   signals HPAI in an already immuno-compromised flock -- the highest-severity
+#   BRD-equivalent pattern in poultry.
+#
+# Key parameter notes:
+#   - tm_min: 60.0 -- DNA target; standard LAMP floor.
+#     Do NOT raise to the RT-LAMP 63 degC floor used for AIV / NDV / IBDV / IBV.
+#   - gc_min: 25.0 -- essential for this extremely AT-rich organism (genomic
+#     GC ~30.9%).  Primers with GC 25-35% will be found in the mgc2 coding blocks.
+#   - gc_max: 45.0 -- deliberately lower than the 65% default; caps primers
+#     below the ~40-50% GC range of avian respiratory flora off-targets.
+#   - conservation.entropy_threshold: 0.20 -- mgc2 is well-conserved within MG
+#     across all sequenced strains; within-species identity > 95%.
+#   - min_identity_threshold: 0.85 -- tight; M. synoviae (MS) has ~30.6% GC and
+#     shares functional-gene blocks with MG; the 0.85 threshold surfaces any
+#     residual cross-reactive candidates before ordering.
+#
+# References:
+#   Goto S, Takagi M, Hirayama N, Inada I & Tsubaki S (2003) Loop-mediated
+#   isothermal amplification (LAMP) for rapid detection of Mycoplasma
+#   gallisepticum.  Vet Microbiol 97(1-2):139-149.
+#   doi:10.1016/s0378-1135(03)00233-0
+#   Ley DH (2008) Mycoplasma gallisepticum infection.  In: Diseases of Poultry,
+#   12th ed.  Blackwell, pp 807-834.
+#   Gates AE, Fenton SJ, Roy P & Keeler CL (2007) Molecular characterization
+#   of Mycoplasma gallisepticum.  Avian Dis 51:s407-s414.
+#   Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+#   Nucleic Acids Res 28(12):e63. doi:10.1093/nar/28.12.e63
+# =============================================================================
+
+target:
+  name: mg_mgc2
+  taxon_id: 2097                 # Mycoplasma gallisepticum (NCBI TaxID)
+  accessions: []                 # taxon-driven fetch; add specific strain accessions
+                                  # (Rlow, S6, F-strain, AP3AS, ts-11) for broader coverage
+  gene: mgc2                     # cytadherence-related protein MGC2; MG-specific LAMP marker
+  max_sequences: 25              # spans major MG genetic clusters (Rlow, S6, F-strain)
+  email: you@your-inst.edu      # REQUIRED by NCBI; replace before running
+
+off_targets:
+  # Critical differentials within avian Mycoplasma species and avian respiratory
+  # pathogens sharing the oropharyngeal/tracheal sampling niche:
+  #
+  #   mycoplasma_synoviae.fasta    - MS; the #1 MG clinical confounder;
+  #                                  co-infects the same flocks; must not co-flag
+  #   mycoplasma_gallinarum.fasta  - common avian respiratory commensal Mycoplasma;
+  #                                  low pathogenicity but ubiquitous in poultry
+  #   mycoplasma_iowae.fasta       - turkey pathogen (tenosynovitis, leg weakness);
+  #                                  can co-circulate on turkey farms
+  #   mycoplasma_meleagridis.fasta - turkey-specific Mycoplasma (airsacculitis);
+  #                                  must not cross-flag in mixed-species operations
+  #   gallus_gallus_fragment.fasta - GalGal6 / GalGal7b chr1 subset; host DNA
+  #                                  from tracheal, oropharyngeal, or cloacal swab
+  fasta_dir: input/off_targets
+  min_identity_threshold: 0.85  # tight -- avian Mycoplasma spp. share functional gene blocks
+  min_coverage_threshold: 0.85
+
+conservation:
+  window_size: 30               # standard window for a single-species bacterial target
+  entropy_threshold: 0.20       # mgc2 is conserved within MG; tight threshold correct
+  min_region_length: 200        # mgc2 CDS is ~600-800 nt; 200 bp regions expected
+
+primer:
+  tm_min: 60.0                  # DNA target -- standard LAMP Tm floor; NOT RT-LAMP
+  tm_max: 65.0
+  tm_match_tolerance: 2.0
+  gc_min: 25.0                  # MG genomic GC ~30.9%; MUST be well below 40%
+  gc_max: 45.0                  # cap below GC-richer avian respiratory flora off-targets
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/mg_mgc2
+  top_n: 10
+  generate_html: true
+  generate_csv: true
