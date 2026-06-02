@@ -4627,5 +4627,200 @@ def cartridge(
         sys.exit(1)
 
 
+@cli.command(name="bov-enteric-risk")
+@click.option(
+    "--etec-k99",
+    "etec_k99",
+    is_flag=True,
+    default=False,
+    help="ETEC K99 / F5 fimbria (faeG gene) positive.",
+)
+@click.option(
+    "--salmonella",
+    "salmonella",
+    is_flag=True,
+    default=False,
+    help="Salmonella sp. (invA gene) positive.",
+)
+@click.option(
+    "--crypto",
+    "crypto",
+    is_flag=True,
+    default=False,
+    help="Cryptosporidium parvum (18S / hsp70 gene) positive.",
+)
+@click.option(
+    "--bcov",
+    "bcov",
+    is_flag=True,
+    default=False,
+    help="Bovine coronavirus enteric pathotype (N gene) positive.",
+)
+@click.option(
+    "--rota-a",
+    "rota_a",
+    is_flag=True,
+    default=False,
+    help="Bovine rotavirus A (VP6 gene) positive.",
+)
+@click.option(
+    "--input-json",
+    "input_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Read pathogen flags from a JSON file instead of individual flags. "
+        "Expected keys: etec_k99, salmonella, crypto, bcov, rota_a (bool). "
+        "Missing keys default to false."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary to a file.",
+)
+def bov_enteric_risk(
+    etec_k99: bool,
+    salmonella: bool,
+    crypto: bool,
+    bcov: bool,
+    rota_a: bool,
+    input_json: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Interpret a bovine neonatal calf diarrhea LAMP panel as a structured alert.
+
+    Takes the positivity flags for the five pathogens monitored by a
+    BioVind-style bovine neonatal enteric panel and returns a structured alert
+    with level, score, interpretation, and recommended action.
+
+    The critical clinical question: does this calf need intravenous antibiotics
+    in the next two hours (ETEC K99 / Salmonella) or supportive care only
+    (BCoV / Rotavirus A / Cryptosporidium)?  The LAMP panel resolves this
+    at the pen-side in under 60 minutes.
+
+    Panel targets:
+
+    \b
+        --etec-k99    ETEC K99 / F5 fimbria      faeG   (~100% CFR neonates <4d)
+        --salmonella  Salmonella sp.             invA   (40-70% CFR; zoonotic)
+        --crypto      Cryptosporidium parvum     18S    (10-50% CFR; zoonotic)
+        --bcov        Bovine coronavirus         N gene (5-20% CFR; supportive)
+        --rota-a      Bovine rotavirus A         VP6    (5-15% CFR; supportive)
+
+    \b
+    Example -- ETEC K99 detected in a neonatal calf (<4 days old):
+        lamp-forge bov-enteric-risk --etec-k99
+
+    \b
+    Example -- BCoV and Rotavirus A co-detected (supportive care):
+        lamp-forge bov-enteric-risk --bcov --rota-a
+
+    \b
+    Example -- Salmonella detected (bacteremia risk; zoonotic):
+        lamp-forge bov-enteric-risk --salmonella
+
+    \b
+    Example -- full panel from a JSON flags file:
+        lamp-forge bov-enteric-risk --input-json results/enteric_flags.json \
+          --out-json results/calf_assessment.json
+    """
+    import json as json_mod
+
+    from lamp_forge.bov_enteric_risk import (
+        BovEntericAlertLevel,
+        BovEntericFlags,
+        assess_bov_enteric_risk,
+        flags_from_dict,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    if input_json is not None:
+        with input_json.open(encoding="utf-8") as fh:
+            raw: dict[str, object] = json_mod.load(fh)
+        flags = flags_from_dict(raw)
+    else:
+        flags = BovEntericFlags(
+            etec_k99=etec_k99,
+            salmonella=salmonella,
+            crypto=crypto,
+            bcov=bcov,
+            rota_a=rota_a,
+        )
+
+    assessment = assess_bov_enteric_risk(flags)
+
+    # --- Panel table ----------------------------------------------------------
+    click.echo("Bovine neonatal calf diarrhea LAMP panel results:")
+    target_rows = [
+        ("ETEC_K99", "faeG", assessment.flags.etec_k99),
+        ("Salmonella", "invA", assessment.flags.salmonella),
+        ("Crypto", "18S", assessment.flags.crypto),
+        ("BCoV", "N gene", assessment.flags.bcov),
+        ("RotaA", "VP6", assessment.flags.rota_a),
+    ]
+    for label, gene, positive in target_rows:
+        symbol = "+" if positive else "-"
+        click.echo(f"  {label:<10} ({gene:<6})  [{symbol}]")
+
+    click.echo("")
+
+    # --- Alert level (colour-coded) ------------------------------------------
+    level_color = {
+        BovEntericAlertLevel.CRITICAL: "red",
+        BovEntericAlertLevel.HIGH: "red",
+        BovEntericAlertLevel.MODERATE: "yellow",
+        BovEntericAlertLevel.LOW: "yellow",
+        BovEntericAlertLevel.NEGATIVE: "green",
+    }
+    color = level_color[assessment.alert_level]
+    click.secho(
+        f"Alert level : {assessment.alert_level.value}  (score {assessment.alert_score}/100)",
+        fg=color,
+        bold=(assessment.alert_level in (BovEntericAlertLevel.CRITICAL, BovEntericAlertLevel.HIGH)),
+    )
+
+    if assessment.antibiotic_indicated:
+        click.secho(
+            "  ANTIBIOTIC INDICATED: bacterial pathogen(s) detected. "
+            "Initiate IV antibiotic therapy -- do NOT wait for culture results.",
+            fg="red",
+            bold=True,
+        )
+
+    if assessment.zoonotic_risk:
+        click.secho(
+            "  ZOONOTIC RISK: Salmonella and/or Cryptosporidium detected. "
+            "Use gloves and strict handwashing when handling affected calves.",
+            fg="yellow",
+        )
+
+    click.echo("")
+    click.echo("Interpretation:")
+    click.echo(f"  {assessment.interpretation}")
+    click.echo("")
+    click.echo("Recommended action:")
+    click.echo(f"  {assessment.recommended_action}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
