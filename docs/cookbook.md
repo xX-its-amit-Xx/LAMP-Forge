@@ -6178,3 +6178,141 @@ lamp-forge validation-plan \
   23(6):769-773. doi:10.3109/00365549109024318
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 38 -- Bovine mastitis herd surveillance trajectory (`lamp-forge mastitis-trend`)
+
+**Goal.** Track the bovine mastitis situation in a dairy herd across consecutive
+LAMP panel results to determine whether contagious pathogens (*Staphylococcus aureus*,
+*Streptococcus agalactiae*) are newly emerging, persisting, or being eradicated --
+and whether environmental mastitis (*Streptococcus uberis*, *E. coli*) is a recurring
+herd-level problem requiring husbandry correction.
+
+**Why it matters.** A single LAMP result tells you what pathogens are present in
+one milk sample right now.  Trend analysis across monthly or quarterly surveillance
+intervals tells you whether your management programme is working.  The decision to
+cull a high-SCC *S. aureus* cow, declare a herd free of *S. agalactiae*, or commission
+a cubicle hygiene review all require a time series -- one result is not enough.
+
+`lamp-forge mastitis-trend` converts a sequence of `mastitis-risk` results into one
+of six trend directions:
+
+| Direction | Meaning | Immediate action |
+|---|---|---|
+| NEWLY_DETECTED | Contagious pathogen appears for first time | Segregate cow; whole-herd LAMP screen within 48 h |
+| PERSISTENT | Contagious pathogen in current AND prior sample(s) | Whole-herd screen to find carrier cow; vet protocol |
+| RESOLVING | Contagious pathogen was present, now absent | Maintain surveillance; confirm 3 consecutive negatives |
+| STABLE_CLEAR | All samples negative | Routine monitoring; continue teat disinfection |
+| STABLE_ENDEMIC | No contagious pathogen; environmental recurring | Review cubicle hygiene, bedding, dry-cow protocol |
+| INSUFFICIENT_DATA | Fewer than 2 samples | Collect next monitoring sample first |
+
+**Typical workflow -- quarterly contagious mastitis surveillance.**
+
+```bash
+# Month 1 -- S. aureus detected at milking
+lamp-forge mastitis-risk --saur \
+  --out-json results/herd-A/2026-01.json
+
+# Month 2 -- S. aureus + S. uberis co-detected
+lamp-forge mastitis-risk --saur --sube \
+  --out-json results/herd-A/2026-02.json
+
+# Month 3 -- all negative (eradication programme completed)
+lamp-forge mastitis-risk \
+  --out-json results/herd-A/2026-03.json
+
+# Analyse the trajectory
+lamp-forge mastitis-trend \
+  --mastitis-result results/herd-A/2026-01.json \
+  --mastitis-result results/herd-A/2026-02.json \
+  --mastitis-result results/herd-A/2026-03.json \
+  --out-json results/herd-A/trend_Q1.json \
+  --out-csv results/herd-A/trend_Q1.csv
+```
+
+Expected output (month 3 negative after two positives):
+
+```
+Bovine mastitis surveillance trajectory: 3 sample(s)
+
+Sample ID     Date          SAUR  SAGA  SUBE  ECOLI  Alert
+---------------------------------------------------------------
+2026-01       2026-01-15     [+]   [-]   [-]   [-]   HIGH
+2026-02       2026-02-15     [+]   [-]   [+]   [-]   HIGH
+2026-03       2026-03-15     [-]   [-]   [-]   [-]   NEGATIVE
+
+Trend direction: RESOLVING
+  Contagious pathogen cleared: confirm with 3 consecutive negatives
+    before ending enhanced surveillance.
+  Worst alert level: HIGH
+```
+
+**CSV monitoring-sheet input.** For herds where results are recorded in a
+spreadsheet rather than individual JSON files:
+
+```bash
+lamp-forge mastitis-trend \
+  --csv monitoring/herd_A_2026.csv \
+  --out-json results/herd-A/trend_2026.json
+```
+
+CSV format (header required):
+
+```
+sample_id,date,saur,saga,sube,ecoli
+HerdA-2026-01,2026-01-15,1,0,0,0
+HerdA-2026-02,2026-02-15,1,0,1,0
+HerdA-2026-03,2026-03-15,0,0,0,0
+```
+
+Boolean columns accept `0`/`1` or `true`/`false`.  The `date`, `sube`,
+and `ecoli` columns are optional.
+
+**Persistent contagious mastitis -- the carrier-cow problem.**  When the same
+contagious pathogen is detected in >= 75 % of >= 3 monitoring intervals,
+`persistent_contagious_likely` is flagged and a highlighted warning appears in
+the CLI output.  This is the signal to escalate to whole-herd individual-cow
+LAMP screening:
+
+```bash
+lamp-forge mastitis-risk --saur --out-json results/herd-B/2026-01.json
+lamp-forge mastitis-risk --saur --out-json results/herd-B/2026-02.json
+lamp-forge mastitis-risk --saur --sube --out-json results/herd-B/2026-03.json
+
+lamp-forge mastitis-trend \
+  --mastitis-result results/herd-B/2026-01.json \
+  --mastitis-result results/herd-B/2026-02.json \
+  --mastitis-result results/herd-B/2026-03.json
+# Output: PERSISTENT -- persistent_contagious_likely=True
+```
+
+**Environmental mastitis monitoring -- STABLE_ENDEMIC.**  When there is no
+contagious pathogen across all samples but *S. uberis* or *E. coli* appear in
+two or more intervals, the direction is `STABLE_ENDEMIC`:
+
+```bash
+lamp-forge mastitis-risk --sube --out-json results/herd-C/2026-01.json
+lamp-forge mastitis-risk --sube --ecoli --out-json results/herd-C/2026-02.json
+lamp-forge mastitis-risk --sube --out-json results/herd-C/2026-03.json
+
+lamp-forge mastitis-trend \
+  --mastitis-result results/herd-C/2026-01.json \
+  --mastitis-result results/herd-C/2026-02.json \
+  --mastitis-result results/herd-C/2026-03.json
+# Output: STABLE_ENDEMIC
+# Recommended action: Review cubicle and bedding management...
+```
+
+**References.**
+
+- Hogeveen H, Huijps K, Lam TJGM (2011) Economic aspects of mastitis: new
+  developments. *N Z Vet J* 59(1):16-23. doi:10.1080/00480169.2011.552541
+- Bradley AJ, Green MJ (2004) The importance and control of mastitis in
+  dairy cattle. *Vet Clin N Am Food Anim Pract* 20(3):469-491.
+  doi:10.1016/j.cvfa.2004.06.010
+- Keefe G (2012) Update on control of *Staphylococcus aureus* and
+  *Streptococcus agalactiae* for management of mastitis. *Vet Clin N Am
+  Food Anim Pract* 28(2):203-216. doi:10.1016/j.cvfa.2012.03.010
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63

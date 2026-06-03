@@ -6458,5 +6458,197 @@ def mastitis_risk(
         click.echo(f"CSV summary written to {out_csv}")
 
 
+@cli.command(name="mastitis-trend")
+@click.option(
+    "--mastitis-result",
+    "mastitis_result_paths",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    metavar="PATH",
+    help=(
+        "JSON file produced by 'lamp-forge mastitis-risk --out-json' for one "
+        "monitoring interval. Repeat once per sample in chronological order (oldest "
+        "first). Mutually exclusive with --csv."
+    ),
+)
+@click.option(
+    "--csv",
+    "csv_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Monitoring-spreadsheet CSV with columns: sample_id, saur, saga, "
+        "sube (optional), ecoli (optional), date (optional). "
+        "Rows must be in chronological order (oldest first). "
+        "Mutually exclusive with --mastitis-result."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full trend assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the chronological mastitis timeline to a CSV file.",
+)
+def mastitis_trend(
+    mastitis_result_paths: tuple[Path, ...],
+    csv_path: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Analyse bovine mastitis surveillance trajectory across consecutive LAMP results.
+
+    Takes a chronological sequence of bovine mastitis LAMP panel results and
+    produces a trend assessment: NEWLY_DETECTED, PERSISTENT, RESOLVING,
+    STABLE_CLEAR, STABLE_ENDEMIC, or INSUFFICIENT_DATA.
+
+    Trend direction is driven by contagious pathogens (S. aureus / S. agalactiae).
+    Environmental pathogens (S. uberis / E. coli) trigger STABLE_ENDEMIC when
+    no contagious pathogen is detected but environmental mastitis recurs.
+
+    Key events detected:
+
+    \b
+      - Contagious pathogen newly detected -- segregate cow; whole-herd screen
+      - Contagious pathogen cleared -- confirm with 3 consecutive negatives
+      - Persistent contagious likely -- >= 75% of >= 3 samples positive
+
+    Input (pick one):
+
+    \b
+      --mastitis-result FILE  JSON from 'lamp-forge mastitis-risk --out-json',
+                              repeated once per monitoring interval, oldest first.
+      --csv FILE              Monitoring-spreadsheet CSV (header required):
+                                sample_id, saur, saga, sube (opt), ecoli (opt),
+                                date (opt)
+
+    \b
+    Example -- monthly mastitis surveillance for one cow group:
+        lamp-forge mastitis-trend \
+          --mastitis-result results/herd-A/2026-01.json \
+          --mastitis-result results/herd-A/2026-02.json \
+          --mastitis-result results/herd-A/2026-03.json \
+          --out-json results/herd-A/trend_Q1.json
+
+    \b
+    Example -- from a monitoring-spreadsheet CSV:
+        lamp-forge mastitis-trend \
+          --csv monitoring/herd_A_2026.csv \
+          --out-json results/herd-A/trend_2026.json
+    """
+    from lamp_forge.mastitis_risk import assess_mastitis_risk as _assess
+    from lamp_forge.mastitis_trend import (
+        analyse_mastitis_trend,
+        records_from_csv,
+        records_from_mastitis_json,
+        write_trend_csv,
+        write_trend_json,
+    )
+
+    if csv_path is not None and mastitis_result_paths:
+        click.secho(
+            "--csv and --mastitis-result are mutually exclusive. Use one or the other.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+    if csv_path is None and not mastitis_result_paths:
+        click.secho(
+            "Provide input via --mastitis-result (one or more JSON files) or --csv.",
+            fg="red",
+            err=True,
+        )
+        sys.exit(2)
+
+    try:
+        if csv_path is not None:
+            records = records_from_csv(csv_path)
+        else:
+            records = records_from_mastitis_json(list(mastitis_result_paths))
+    except (ValueError, OSError) as exc:
+        click.secho(f"Input error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        trend = analyse_mastitis_trend(records)
+    except ValueError as exc:
+        click.secho(f"Analysis error: {exc}", fg="red", err=True)
+        sys.exit(1)
+
+    direction_colour = {
+        "NEWLY_DETECTED": "red",
+        "PERSISTENT": "red",
+        "RESOLVING": "green",
+        "STABLE_CLEAR": "green",
+        "STABLE_ENDEMIC": "yellow",
+        "INSUFFICIENT_DATA": "yellow",
+    }
+    col = direction_colour.get(trend.direction.value, "white")
+    click.echo(f"Bovine mastitis surveillance trajectory: {trend.n_samples} sample(s)")
+    click.echo("")
+
+    col_id = max((len(r.sample_id) for r in trend.records), default=10)
+    col_id = max(col_id, 9)
+    header = (
+        f"{'Sample ID':<{col_id}}  {'Date':<12}  "
+        f"{'SAUR':>4}  {'SAGA':>4}  {'SUBE':>4}  {'ECOLI':>5}  Alert"
+    )
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for r in trend.records:
+        lvl = _assess(r.flags).alert_level.value
+        date_str = (r.date or "")[:12]
+        click.echo(
+            f"{r.sample_id:<{col_id}}  {date_str:<12}  "
+            f"{'[+]' if r.flags.saur else '[-]':>4}  "
+            f"{'[+]' if r.flags.saga else '[-]':>4}  "
+            f"{'[+]' if r.flags.sube else '[-]':>4}  "
+            f"{'[+]' if r.flags.ecoli else '[-]':>5}  {lvl}"
+        )
+    click.echo("")
+
+    click.secho(f"Trend direction: {trend.direction.value}", fg=col)
+
+    if trend.contagious_newly_detected:
+        click.secho(
+            "  Contagious pathogen NEWLY DETECTED: segregate cow to end of milking "
+            "order and conduct whole-herd LAMP screen within 48 hours.",
+            fg="red",
+            bold=True,
+        )
+    if trend.contagious_cleared:
+        click.secho(
+            "  Contagious pathogen cleared: confirm with 3 consecutive negatives "
+            "before ending enhanced surveillance.",
+            fg="green",
+        )
+    if trend.persistent_contagious_likely:
+        click.secho(
+            "  Persistent contagious mastitis likely: conduct whole-herd individual-cow "
+            "LAMP screen to identify and remove the carrier cow.",
+            fg="yellow",
+        )
+    click.echo(f"  Worst alert level: {trend.worst_alert_level.value}")
+    click.echo("")
+    click.echo(f"Interpretation: {trend.interpretation}")
+    click.echo("")
+    click.echo(f"Recommended action: {trend.recommended_action}")
+
+    if out_json is not None:
+        write_trend_json(trend, out_json)
+        click.echo(f"\nTrend assessment written to {out_json}")
+    if out_csv is not None:
+        write_trend_csv(trend, out_csv)
+        click.echo(f"Timeline CSV written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
