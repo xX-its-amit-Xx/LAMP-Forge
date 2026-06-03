@@ -5991,5 +5991,177 @@ def swine_respiratory_trend_cmd(
         click.echo(f"Timeline CSV written to {out_csv}")
 
 
+@cli.command(name="validation-plan")
+@click.option(
+    "--sn-min",
+    "sn_min",
+    type=float,
+    default=0.95,
+    show_default=True,
+    help="Minimum sensitivity to claim (e.g. 0.95 for >= 95%).",
+)
+@click.option(
+    "--sp-min",
+    "sp_min",
+    type=float,
+    default=0.99,
+    show_default=True,
+    help="Minimum specificity to claim (e.g. 0.99 for >= 99%).",
+)
+@click.option(
+    "--confidence",
+    "confidence",
+    type=float,
+    default=0.95,
+    show_default=True,
+    help="Wilson score CI confidence level (default 0.95 for 95% CI).",
+)
+@click.option(
+    "--p-expected-pos",
+    "p_expected_pos",
+    type=float,
+    default=None,
+    help=(
+        "Expected true sensitivity for the powered study plan (default: sn_min + 0.02). "
+        "Must be > sn_min to get a meaningful powered sample size."
+    ),
+)
+@click.option(
+    "--p-expected-neg",
+    "p_expected_neg",
+    type=float,
+    default=None,
+    help=(
+        "Expected true specificity for the powered study plan (default: sp_min + 0.01). "
+        "Must be > sp_min to get a meaningful powered sample size."
+    ),
+)
+@click.option(
+    "--power",
+    "power",
+    type=float,
+    default=0.80,
+    show_default=True,
+    help=(
+        "Required statistical power for the expected-performance plan "
+        "(probability of the lower CI bound meeting the spec). "
+        "Default 0.80 (80%)."
+    ),
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the validation plan to a CSV file.",
+)
+def validation_plan(
+    sn_min: float,
+    sp_min: float,
+    confidence: float,
+    p_expected_pos: float | None,
+    p_expected_neg: float | None,
+    power: float,
+    out_csv: Path | None,
+) -> None:
+    r"""Calculate specimen counts for a LAMP assay validation study.
+
+    Answers the inverse of 'lamp-forge accuracy': instead of computing Sn/Sp
+    from TP/FP/TN/FN counts, it answers "how many confirmed-positive and
+    confirmed-negative specimens do I need to DEMONSTRATE Sn >= sn_min and
+    Sp >= sp_min at the required confidence level?"
+
+    Two plans are shown for each metric:
+
+    \b
+      Zero-failure plan (FDA/CLIA conservative):
+        The smallest n where, if every specimen is correctly called (0 failures),
+        the lower Wilson CI bound still meets the specification.  One failure
+        will push the bound below spec.
+
+    \b
+      Expected-performance plan (powered study design):
+        The smallest n where, given an expected true performance of
+        p_expected, the probability of the lower CI bound meeting the spec
+        is >= power.  Requires fewer specimens when p_expected > p_min.
+
+    BioVind acceptance criteria: Sn >= 95%, Sp >= 99%, LR+ >= 20, Youden J >= 0.90.
+    Use 'lamp-forge accuracy' after the study to compute the actual metrics.
+
+    \b
+    Example -- default BioVind targets (Sn >= 95%, Sp >= 99%):
+        lamp-forge validation-plan
+
+    \b
+    Example -- oilfield SRB dsrB assay, expecting Sn=97%/Sp=100%:
+        lamp-forge validation-plan \\
+          --sn-min 0.95 --sp-min 0.99 \\
+          --p-expected-pos 0.97 --p-expected-neg 1.00 \\
+          --power 0.80
+
+    \b
+    Example -- human POC MTB assay, tighter Sp claim:
+        lamp-forge validation-plan \\
+          --sn-min 0.90 --sp-min 0.99 \\
+          --out-csv results/mtb_rpoB/validation_plan.csv
+
+    \b
+    Example -- farm PRRSV RT-LAMP, 90% power target:
+        lamp-forge validation-plan \\
+          --sn-min 0.95 --sp-min 0.99 \\
+          --p-expected-pos 0.98 --p-expected-neg 1.00 \\
+          --power 0.90 \\
+          --out-csv results/prrsv_orf7/validation_plan.csv
+    """
+    from lamp_forge.validation_plan import build_validation_plan, write_plan_csv
+
+    try:
+        plan = build_validation_plan(
+            sn_min=sn_min,
+            sp_min=sp_min,
+            confidence=confidence,
+            p_expected_pos=p_expected_pos,
+            p_expected_neg=p_expected_neg,
+            power=power,
+        )
+    except ValueError as exc:
+        click.secho(f"Parameter error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    click.echo(
+        f"Validation study plan: Sn >= {sn_min:.0%}, Sp >= {sp_min:.0%}, "
+        f"{confidence * 100:.0f}% Wilson CI"
+    )
+    click.echo("")
+
+    for row in plan.rows:
+        label = "Sensitivity" if row.metric == "sensitivity" else "Specificity"
+        specimen_type = (
+            "confirmed-positive" if row.metric == "sensitivity" else "confirmed-negative"
+        )
+        click.echo(f"  {label} (>= {row.p_min:.0%}):")
+        click.secho(
+            f"    Zero-failure plan  : {row.n_zero_failure:>4} {specimen_type} specimens "
+            f"(lower CI >= {row.wilson_lower_zf:.4f} with 0 failures allowed)",
+            fg="green",
+        )
+        click.echo(
+            f"    Powered plan       : {row.n_expected:>4} {specimen_type} specimens "
+            f"(p_expected={row.p_expected:.0%}, power={row.achieved_power:.0%})"
+        )
+        click.echo("")
+
+    click.echo("Summary (zero-failure plan):")
+    click.echo(f"  Confirmed-positive specimens required: {plan.n_positive_required}")
+    click.echo(f"  Confirmed-negative specimens required: {plan.n_negative_required}")
+    click.echo(f"  Total specimens: {plan.n_positive_required + plan.n_negative_required}")
+    click.echo("")
+    click.echo("After collection, run: lamp-forge accuracy --tp <TP> --fp <FP> --tn <TN> --fn <FN>")
+
+    if out_csv is not None:
+        write_plan_csv(plan, out_csv)
+        click.echo(f"\nValidation plan written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
