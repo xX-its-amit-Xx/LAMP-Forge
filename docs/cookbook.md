@@ -5536,7 +5536,7 @@ extraction.
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
 
-## Recipe 31 -- Swine Respiratory Disease Complex (PRDC) three-target panel (`lamp-forge swine-respiratory-risk`)
+## Recipe 35 -- Swine Respiratory Disease Complex (PRDC) three-target panel (`lamp-forge swine-respiratory-risk`)
 
 **Goal.** A portable BioVind-style three-channel LAMP panel that distinguishes
 the three core drivers of the Porcine Respiratory Disease Complex (PRDC):
@@ -5695,5 +5695,258 @@ STABLE_CLEAR, STABLE_ENDEMIC (Mhp/PCV2 endemic), RESOLVING.
 - Zhang X et al. (2019) Loop-mediated isothermal amplification for Mhp
   detection.  *J Vet Diagn Invest* 31(4):571-576.
   doi:10.1177/1040638719843372
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63.  doi:10.1093/nar/28.12.e63
+
+---
+
+## Recipe 36 -- Swine neonatal enteric three-target panel (`lamp-forge swine-enteric-risk`)
+
+**Goal.** A portable BioVind-style three-channel LAMP panel that simultaneously
+detects the three dominant pathogens of neonatal piglet diarrhea -- Porcine
+Epidemic Diarrhea Virus (PEDV), Porcine Deltacoronavirus (PDCoV), and Porcine
+Rotavirus A -- and maps the result to a quarantine / biosecurity decision within
+60 minutes, pen-side in a farrowing barn.
+
+**Why it matters.** Neonatal diarrhea is the leading cause of pre-weaning
+piglet mortality in commercial swine production worldwide.  PEDV alone caused
+the death of over 10% of the US sow herd in the 2013-14 outbreak.  The three
+pathogens are clinically indistinguishable (watery yellow diarrhea, rapid
+dehydration, prostration), yet they require fundamentally different biosecurity
+responses:
+
+| Pathogen | Neonatal CFR | Key action |
+|---|---|---|
+| PEDV | ~100% (< 1 wk) | Pen quarantine, barn lockdown, stop all movement |
+| PDCoV | 40-80% (< 1 wk) | Quarantine, intensive supportive care |
+| Rotavirus A | 10-40% | Oral rehydration therapy, monitor for coronavirus co-infection |
+
+A PCR lab turnaround of 24-48 h is too slow to prevent barn-to-barn fomite
+spread.  A pen-side LAMP result in under 60 min drives the right intervention
+before the attending herdsperson leaves the farrowing unit.
+
+**Why this is a BioVind fit.** BioVind's farm-biosecurity vertical targets
+exactly this scenario: a portable device, a multiplex LAMP panel, and an
+actionable on-device clinical report.  All three pathogens are RNA-virus targets,
+so each channel is an RT-LAMP assay fully compatible with BioVind BioID at
+63-65 degC.
+
+**Primer design -- one target per run, then combine.**
+
+Recipe 27 already covers PEDV standalone design.  This recipe adds PDCoV and
+Porcine Rotavirus A and combines all three into the neonatal enteric panel.
+
+```bash
+# Design each target independently (network required)
+
+lamp-forge run --config config/pedv_N_gene.yaml
+lamp-forge run --config config/pdcov_N_gene.yaml
+lamp-forge run --config config/porcine_rota_a.yaml
+```
+
+**Cross-dimer compatibility screen.**
+
+```bash
+lamp-forge panel \
+  --set PEDV=results/pedv_N_gene/primer_sets.json \
+  --set PDCoV=results/pdcov_N_gene/primer_sets.json \
+  --set RotaA=results/porcine_rota_a/primer_sets.json \
+  --top-per-target 5 \
+  --dimer-dg-threshold -5.0 \
+  --out results/swine_enteric_3plex
+```
+
+**Verify RT-LAMP readiness for each channel.** All three are RNA targets:
+
+```bash
+lamp-forge rt-check \
+  --input results/pedv_N_gene/primer_sets.json --na-type rna \
+  --out-csv results/pedv_N_gene/rt_check.csv
+
+lamp-forge rt-check \
+  --input results/pdcov_N_gene/primer_sets.json --na-type rna \
+  --out-csv results/pdcov_N_gene/rt_check.csv
+
+lamp-forge rt-check \
+  --input results/porcine_rota_a/primer_sets.json --na-type rna \
+  --out-csv results/porcine_rota_a/rt_check.csv
+```
+
+All core primers (F3, B3, FIP, BIP) must be >= 63.0 degC.  Rotavirus A is
+dsRNA; chaotropic lysis or 95 degC heat denaturation releases ssRNA template
+that is efficiently primed by NEB RTx at 63-65 degC.
+
+**Estimate LOD before ordering** (rectal swab in 500 uL PBS, 50% RNA
+extraction, 50 uL eluate, 5 uL to reaction):
+
+```bash
+lamp-forge lod \
+  --sample-volume 500 \
+  --efficiency 0.50 \
+  --eluate-volume 50 \
+  --reaction-input 5
+```
+
+Effective sample = 500 x 0.5 x (5/50) = 25 uL per reaction.  LOD_95 approx
+120 copies/mL of PBS swab eluate.  Faecal PEDV titres in acutely infected
+neonatal piglets typically range from 10^5 to 10^9 copies/g (He et al. 2019),
+providing orders-of-magnitude headroom above the assay LOD.
+
+**Pool the working stock.** Three RNA targets, minimum stock concentration
+3 x 44 = 132 uM; request 200 uM resuspension from IDT or Twist:
+
+```bash
+lamp-forge pool \
+  --panel results/swine_enteric_3plex/panel.json \
+  --stock-conc 200 \
+  --total-volume 500 \
+  --out results/swine_enteric_3plex/enteric_pool_sheet.csv
+```
+
+**Export to IDT for synthesis:**
+
+```bash
+lamp-forge export \
+  --input results/pedv_N_gene/primer_sets.json \
+  --format idt \
+  --target-label PEDV_N \
+  --out orders/pedv_idt_order.csv
+
+lamp-forge export \
+  --input results/pdcov_N_gene/primer_sets.json \
+  --format idt \
+  --target-label PDCoV_N \
+  --out orders/pdcov_idt_order.csv
+
+lamp-forge export \
+  --input results/porcine_rota_a/primer_sets.json \
+  --format idt \
+  --target-label RotaA_VP6 \
+  --out orders/rota_a_idt_order.csv
+```
+
+**Interpreting a pen-side result.** Feed the three positivity flags from the
+device into the swine enteric risk engine:
+
+```bash
+# PEDV detected alone (critical)
+lamp-forge swine-enteric-risk --pedv
+
+# PDCoV and Rotavirus A co-detected (no PEDV)
+lamp-forge swine-enteric-risk --pdcov --rota-a
+
+# All three co-detected (worst-case neonatal enteric outbreak)
+lamp-forge swine-enteric-risk --pedv --pdcov --rota-a
+
+# Save for trend tracking
+lamp-forge swine-enteric-risk --pedv \
+  --out-json results/barn-A/farrowing/2026-01.json
+```
+
+**Scoring model and alert levels:**
+
+| Detection pattern | Score | Alert | Key action |
+|---|---|---|---|
+| PEDV (any co-infection) | 50+ | CRITICAL | Pen quarantine; barn lockdown; stop all pig movement |
+| PDCoV alone or + RotaA | 30-45 | HIGH | Quarantine unit; intensive supportive care; vet call |
+| Rotavirus A alone | 15 | MODERATE | Oral rehydration therapy; monitor 24-48 h |
+| Any single positive | 1-14 | LOW | Review with site veterinarian |
+| All negative | 0 | NEGATIVE | Confirm extraction control positive |
+
+`immediate_quarantine_required` is set True whenever PEDV is detected,
+regardless of co-infection status.  `biosecurity_lockdown` is set True
+for any porcine enteric coronavirus (PEDV or PDCoV).
+
+### Tracking trend across monitoring intervals
+
+Time-series trend analysis converts a sequence of panel results into a
+trajectory (EMERGING / STABLE_CLEAR / STABLE_ENDEMIC / RESOLVING /
+INSUFFICIENT_DATA) and flags the critical PEDV first-detection and
+clearance events:
+
+```bash
+lamp-forge swine-enteric-trend \
+  --enteric-result results/barn-A/farrowing/2026-01.json \
+  --enteric-result results/barn-A/farrowing/2026-02.json \
+  --enteric-result results/barn-A/farrowing/2026-03.json \
+  --out-json results/barn-A/farrowing/trend_Q1.json \
+  --out-csv results/barn-A/farrowing/trend_Q1.csv
+```
+
+Or from a monitoring CSV (header required):
+
+```bash
+lamp-forge swine-enteric-trend \
+  --csv results/barn-A/farrowing/monitoring.csv \
+  --out-json results/barn-A/farrowing/trend.json
+```
+
+CSV format:
+
+```
+sample_id,date,pedv,pdcov,rota_a
+BarnA-2026-01,2026-01-15,1,0,0
+BarnA-2026-02,2026-02-15,1,0,1
+BarnA-2026-03,2026-03-15,0,0,1
+```
+
+Boolean columns accept `0`/`1` or `true`/`false` (case-insensitive).
+The `date` column is optional.
+
+Trend directions and their meaning:
+
+| Direction | Meaning | Immediate action |
+|---|---|---|
+| EMERGING | PEDV newly detected or pathogen burden rising | Full outbreak protocol; movement restriction; vet call |
+| STABLE_CLEAR | All targets negative across intervals | Routine monitoring; continue surveillance schedule |
+| STABLE_ENDEMIC | Rotavirus A or PDCoV endemic but no PEDV | Standard management; review vaccination; no movement restriction |
+| RESOLVING | Pathogen burden declining after a detection event | Maintain restrictions until 3 consecutive negatives |
+| INSUFFICIENT_DATA | Fewer than 2 intervals | Collect additional samples before trend classification |
+
+PEDV first-detection (`pedv_newly_detected`) and clearance (`pedv_cleared`)
+events are flagged explicitly in the JSON output.
+
+### Wet-lab notes
+
+- **Sample type.** Rectal swab in 500 uL PBS, or intestinal content from
+  acutely affected piglets.  Intestinal content from the small intestine
+  (jejunum / ileum) yields the highest viral titres for PEDV and PDCoV.
+  Swabs from multiple litters should be pooled before extraction to increase
+  surveillance sensitivity.
+- **Lysis.** Use a chaotropic lysis buffer (guanidinium thiocyanate) for
+  one-step extraction; this simultaneously lyses enveloped coronaviruses
+  and denatures Rotavirus A dsRNA.  A 5-minute 95 degC incubation step
+  is optional for Rotavirus A with column-free extraction protocols but is
+  not required with NEB WarmStart RTx at 63-65 degC when combined with
+  guanidinium lysis.
+- **Internal control.** Include a 16S rRNA LAMP channel (Recipe 19) or
+  an RNA spike-in (MS2 phage) to confirm extraction success.  A negative
+  internal control invalidates the run -- do not report a clean result from a
+  panel where the extraction control is also negative.
+- **Co-infection.** All three pathogens can co-circulate in a single piglet.
+  The scoring model is additive (PEDV + RotaA = score 65, CRITICAL).  Confirm
+  PCR subtype information at an accredited laboratory if regulatory notification
+  or vaccine efficacy assessment is required.
+
+**References.**
+
+- Stevenson GW, Hoang H, Schwartz KJ et al. (2013) Emergence of porcine
+  epidemic diarrhea virus in the United States: clinical signs, lesions, and
+  viral genomic sequences.  *J Vet Diagn Invest* 25(5):649-654.
+  doi:10.1177/1040638713501675
+- Song D, Zhou X, Peng Q et al. (2015) Newly emerged porcine deltacoronavirus
+  associated with diarrhoea in swine in China: identification, prevalence and
+  full-length genome sequence analysis.  *Transbound Emerg Dis* 62(6):575-580.
+  doi:10.1111/tbed.12399
+- Saif LJ, Pensaert MB, Sestak K, Yeo S-G, Jung K (2012) Coronaviruses.
+  In: Zimmerman JJ et al. (eds) *Diseases of Swine*, 10th ed.
+  Wiley-Blackwell, pp 501-524.
+- Khamrin P, Maneekarn N, Hidaka S et al. (2010) Loop-mediated isothermal
+  amplification for rapid detection of rotavirus in clinical stool specimens.
+  *J Virol Methods* 163:384-389.  doi:10.1016/j.jviromet.2009.11.013
+- He X, Guo S, Wang Y et al. (2019) Development and evaluation of a rapid and
+  sensitive reverse-transcription loop-mediated isothermal amplification method
+  for the detection of porcine epidemic diarrhea virus.
+  *Transbound Emerg Dis* 66(1):431-439.  doi:10.1111/tbed.13044
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63.  doi:10.1093/nar/28.12.e63
