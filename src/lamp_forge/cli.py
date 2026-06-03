@@ -6284,5 +6284,179 @@ def uti_risk(
         click.echo(f"CSV summary written to {out_csv}")
 
 
+@cli.command(name="mastitis-risk")
+@click.option("--saur", "saur", is_flag=True, default=False, help="S. aureus (nuc gene) positive.")
+@click.option(
+    "--saga", "saga", is_flag=True, default=False, help="S. agalactiae (cfb CAMP factor) positive."
+)
+@click.option(
+    "--sube", "sube", is_flag=True, default=False, help="S. uberis (sue repeat locus) positive."
+)
+@click.option(
+    "--ecoli",
+    "ecoli",
+    is_flag=True,
+    default=False,
+    help="E. coli (uidA beta-D-glucuronidase) positive.",
+)
+@click.option(
+    "--input-json",
+    "input_json",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Read pathogen flags from a JSON file instead of individual flags. "
+        "Expected keys: saur, saga, sube, ecoli (bool). "
+        "Missing keys default to false."
+    ),
+)
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the full assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary to a file.",
+)
+def mastitis_risk(
+    saur: bool,
+    saga: bool,
+    sube: bool,
+    ecoli: bool,
+    input_json: Path | None,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    r"""Interpret a bovine mastitis LAMP panel as a structured dairy-farm alert.
+
+    Takes the positivity flags for the four pathogens monitored by a
+    BioVind-style bovine mastitis panel and returns a structured alert with
+    level, score, interpretation, and recommended action.
+
+    Differentiates contagious pathogens (S. aureus, S. agalactiae -- requiring
+    herd-level cow segregation and whole-herd screening) from environmental ones
+    (S. uberis, E. coli -- requiring husbandry corrections) at the time of
+    first clinical signs, enabling same-visit treatment decisions.
+
+    Panel targets:
+    \b
+        --saur   Staphylococcus aureus      nuc (thermostable nuclease)
+        --saga   Streptococcus agalactiae   cfb (CAMP factor)
+        --sube   Streptococcus uberis       sue (repeat locus)
+        --ecoli  Escherichia coli           uidA (beta-D-glucuronidase)
+
+    \b
+    Example -- S. aureus detected (contagious; evaluate culling):
+        lamp-forge mastitis-risk --saur
+
+    \b
+    Example -- S. agalactiae detected (eradicable with intramammary penicillin):
+        lamp-forge mastitis-risk --saga
+
+    \b
+    Example -- both contagious pathogens co-detected (CRITICAL; whole-herd screen):
+        lamp-forge mastitis-risk --saur --saga
+
+    \b
+    Example -- E. coli alone (supportive care; antimicrobials usually not required):
+        lamp-forge mastitis-risk --ecoli
+
+    \b
+    Example -- read flags from a JSON file and write an assessment report:
+        lamp-forge mastitis-risk --input-json results/mastitis/flags.json \
+          --out-json results/mastitis/assessment.json
+    """
+    import json as json_mod
+
+    from lamp_forge.mastitis_risk import (
+        MastitisAlertLevel,
+        MastitisPanelFlags,
+        assess_mastitis_risk,
+        flags_from_dict,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    if input_json is not None:
+        with input_json.open(encoding="utf-8") as fh:
+            raw: dict[str, object] = json_mod.load(fh)
+        flags = flags_from_dict(raw)
+    else:
+        flags = MastitisPanelFlags(saur=saur, saga=saga, sube=sube, ecoli=ecoli)
+
+    assessment = assess_mastitis_risk(flags)
+
+    # --- Panel table ----------------------------------------------------------
+    click.echo("Bovine mastitis LAMP panel results:")
+    target_rows = [
+        ("SAUR", "nuc", assessment.flags.saur),
+        ("SAGA", "cfb", assessment.flags.saga),
+        ("SUBE", "sue", assessment.flags.sube),
+        ("ECOLI", "uidA", assessment.flags.ecoli),
+    ]
+    for label, gene, positive in target_rows:
+        symbol = "+" if positive else "-"
+        click.echo(f"  {label:<5} ({gene:<4})  [{symbol}]")
+
+    click.echo("")
+
+    # --- Alert level (colour-coded) ------------------------------------------
+    level_color = {
+        MastitisAlertLevel.CRITICAL: "red",
+        MastitisAlertLevel.HIGH: "red",
+        MastitisAlertLevel.MODERATE: "yellow",
+        MastitisAlertLevel.LOW: "cyan",
+        MastitisAlertLevel.NEGATIVE: "green",
+    }
+    color = level_color[assessment.alert_level]
+    click.secho(
+        f"Alert level : {assessment.alert_level.value}  (score {assessment.alert_score}/100)",
+        fg=color,
+        bold=(assessment.alert_level in (MastitisAlertLevel.CRITICAL, MastitisAlertLevel.HIGH)),
+    )
+
+    if assessment.contagious_coinfection:
+        click.secho(
+            "  Both contagious pathogens detected (S. aureus + S. agalactiae): "
+            "whole-herd LAMP screen required to identify all carriers.",
+            fg="red",
+            bold=True,
+        )
+    elif assessment.contagious_pathogen_detected:
+        click.secho(
+            "  Contagious mastitis pathogen detected: segregate cow to end of milking order; "
+            "consider whole-herd screening.",
+            fg="red",
+        )
+
+    if assessment.s_aureus_biofilm_risk:
+        click.secho(
+            "  S. aureus biofilm risk: intramammary antibiotic penetration is low; "
+            "evaluate culling for chronic or high-SCC cows.",
+            fg="yellow",
+        )
+
+    click.echo("")
+    click.echo("Interpretation:")
+    click.echo(f"  {assessment.interpretation}")
+    click.echo("")
+    click.echo("Recommended action:")
+    click.echo(f"  {assessment.recommended_action}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()
