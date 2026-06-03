@@ -429,6 +429,153 @@ def lod(
         click.echo(f"\nLOD table written to {out_csv}")
 
 
+@cli.command(name="lod-target")
+@click.option(
+    "--target-lod",
+    "target_lod",
+    type=float,
+    required=True,
+    help=(
+        "Required assay LOD in copies/mL of the original sample. "
+        "The command shows which extraction-chain combinations achieve this threshold."
+    ),
+)
+@click.option(
+    "--probability",
+    "detection_probability",
+    type=float,
+    default=0.95,
+    show_default=True,
+    help="Detection probability at the LOD (default 0.95 for LOD_95).",
+)
+@click.option(
+    "--eluate-volume",
+    "eluate_volume_ul",
+    type=float,
+    default=100.0,
+    show_default=True,
+    help="Fixed elution volume for all combinations (uL).",
+)
+@click.option(
+    "--reaction-input",
+    "reaction_input_ul",
+    type=float,
+    default=5.0,
+    show_default=True,
+    help="Fixed volume of eluate added to each LAMP reaction (uL).",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the sweep table to a CSV file.",
+)
+def lod_target(
+    target_lod: float,
+    detection_probability: float,
+    eluate_volume_ul: float,
+    reaction_input_ul: float,
+    out_csv: Path | None,
+) -> None:
+    r"""Reverse-LOD calculator: find extraction chains that achieve a target LOD.
+
+    Answers: "Given that I need to detect X copies/mL, which sample volume and
+    extraction efficiency do I need?"  This is the complement of
+    ``lamp-forge lod`` (which asks: given an extraction chain, what LOD do I get?).
+
+    Sweeps sample volumes (200, 400, 1000, 2000 uL) and extraction efficiencies
+    (30%, 40%, 50%, 60%, 70%) at a fixed eluate volume and reaction input.
+    Rows meeting the target LOD are marked PASS; those below are marked FAIL.
+
+    Use this before finalising a sample-preparation protocol to confirm that
+    the available collection volume and extraction kit efficiency will deliver
+    the sensitivity required for your BioVind deployment scenario.
+
+    \b
+    Example -- oilfield SRB, need 500 copies/mL sensitivity,
+    100 uL eluate, 5 uL to reaction:
+        lamp-forge lod-target --target-lod 500
+
+    \b
+    Example -- farm biosecurity PRRSV oral fluid, need 100 copies/mL,
+    50 uL eluate, 5 uL to reaction:
+        lamp-forge lod-target --target-lod 100 --eluate-volume 50
+
+    \b
+    Example -- human POC MTB sputum, need 50 copies/mL,
+    export sweep to CSV:
+        lamp-forge lod-target --target-lod 50 --out-csv results/mtb_sweep.csv
+    """
+    from lamp_forge.lod_target import extraction_sweep, required_effective_vol_ul, write_sweep_csv
+
+    try:
+        v_eff_req = required_effective_vol_ul(target_lod, detection_probability)
+    except ValueError as exc:
+        click.secho(f"Parameter error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    try:
+        points = extraction_sweep(
+            target_lod_copies_per_ml=target_lod,
+            eluate_volume_ul=eluate_volume_ul,
+            reaction_input_ul=reaction_input_ul,
+            detection_probability=detection_probability,
+        )
+    except ValueError as exc:
+        click.secho(f"Sweep error: {exc}", fg="red", err=True)
+        sys.exit(2)
+
+    click.echo(
+        f"Target LOD: {target_lod:.1f} copies/mL  "
+        f"(LOD_{detection_probability * 100:.0f}, Poisson model)"
+    )
+    click.echo(f"Required effective sample per reaction: {v_eff_req:.2f} uL")
+    click.echo(f"Fixed: {eluate_volume_ul:.0f} uL eluate, {reaction_input_ul:.1f} uL to reaction")
+    click.echo("")
+
+    col_v = 12
+    col_e = 12
+    col_eff_v = 14
+    col_lod = 18
+    header = (
+        f"{'Sample (uL)':>{col_v}}  {'Efficiency':>{col_e}}  "
+        f"{'Eff. vol (uL)':>{col_eff_v}}  {'LOD (copies/mL)':>{col_lod}}  Status"
+    )
+    click.echo(header)
+    click.echo("-" * len(header))
+    for pt in points:
+        status = "PASS" if pt.achieves_target else "FAIL"
+        fg = "green" if pt.achieves_target else None
+        click.secho(
+            f"{pt.sample_volume_ul:>{col_v}.0f}  "
+            f"{pt.extraction_efficiency * 100:>{col_e}.0f}%  "
+            f"{pt.effective_vol_ul:>{col_eff_v}.2f}  "
+            f"{pt.lod_copies_per_ml:>{col_lod}.1f}  "
+            f"{status}",
+            fg=fg,
+        )
+
+    n_pass = sum(1 for p in points if p.achieves_target)
+    click.echo("")
+    if n_pass:
+        click.secho(
+            f"{n_pass} of {len(points)} combination(s) achieve <= {target_lod:.1f} copies/mL.",
+            fg="green",
+        )
+    else:
+        click.secho(
+            f"No combination achieves <= {target_lod:.1f} copies/mL with the "
+            f"default parameter ranges.  Try increasing sample volume or "
+            f"reducing eluate volume to concentrate the extract.",
+            fg="yellow",
+        )
+
+    if out_csv is not None:
+        write_sweep_csv(points, target_lod, out_csv)
+        click.echo(f"\nSweep table written to {out_csv}")
+
+
 @cli.command(name="ttp")
 @click.option(
     "--preset",
