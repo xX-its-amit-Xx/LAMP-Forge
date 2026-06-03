@@ -6163,5 +6163,126 @@ def validation_plan(
         click.echo(f"\nValidation plan written to {out_csv}")
 
 
+@cli.command(name="uti-risk")
+@click.option("--ecoli/--no-ecoli", default=False, help="E. coli (uidA) positive.")
+@click.option("--kpneu/--no-kpneu", default=False, help="K. pneumoniae (phoE) positive.")
+@click.option("--efaec/--no-efaec", default=False, help="E. faecalis (ddl) positive.")
+@click.option("--ssaph/--no-ssaph", default=False, help="S. saprophyticus (sdrF) positive.")
+@click.option(
+    "--out-json",
+    "out_json",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the assessment to a JSON file.",
+)
+@click.option(
+    "--out-csv",
+    "out_csv",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write a flat key-value CSV summary of the assessment.",
+)
+def uti_risk(
+    ecoli: bool,
+    kpneu: bool,
+    efaec: bool,
+    ssaph: bool,
+    out_json: Path | None,
+    out_csv: Path | None,
+) -> None:
+    """Interpret a four-target POC UTI LAMP panel result.
+
+    Weights E. coli, K. pneumoniae, E. faecalis, and S. saprophyticus by
+    community UTI prevalence and the clinical cost of antibiotic mismatch,
+    producing a structured alert with prescribing guidance and resistance flags.
+
+    \b
+    Targets:
+      E. coli        -- uidA (beta-D-glucuronidase); 75-80% community UTI
+      K. pneumoniae  -- phoE (outer-membrane porin); ESBL/KPC risk
+      E. faecalis    -- ddl (D-Ala:D-Ala ligase); cephalosporin-intrinsically resistant
+      S. saprophyticus -- sdrF (serine-aspartate repeat protein F)
+
+    \b
+    Alert levels:
+      HIGH      -- gram-negative uropathogen detected; culture + antibiogram needed
+      MODERATE  -- E. faecalis alone; switch from standard empiric regimen
+      LOW       -- S. saprophyticus alone; nitrofurantoin / trimethoprim
+      NEGATIVE  -- all targets negative; send culture if suspicion remains
+
+    \b
+    Example -- E. coli-positive UTI:
+        lamp-forge uti-risk --ecoli
+
+    \b
+    Example -- K. pneumoniae detected, write JSON report:
+        lamp-forge uti-risk --kpneu --out-json results/uti/kpneu_assessment.json
+
+    \b
+    Example -- polymicrobial UTI (E. coli + E. faecalis):
+        lamp-forge uti-risk --ecoli --efaec --out-csv results/uti/mixed_uti.csv
+
+    \b
+    Example -- all targets negative:
+        lamp-forge uti-risk
+    """
+    from lamp_forge.uti_risk import (
+        UtiPanelFlags,
+        assess_uti_risk,
+        write_assessment_csv,
+        write_assessment_json,
+    )
+
+    flags = UtiPanelFlags(ecoli=ecoli, kpneu=kpneu, efaec=efaec, ssaph=ssaph)
+    assessment = assess_uti_risk(flags)
+
+    level_colours = {
+        "HIGH": "red",
+        "MODERATE": "yellow",
+        "LOW": "cyan",
+        "NEGATIVE": "green",
+    }
+    colour = level_colours.get(assessment.alert_level.value, "white")
+
+    click.echo("POC UTI LAMP Panel Assessment")
+    click.echo("=" * 40)
+    click.secho(
+        f"Alert level : {assessment.alert_level.value}  (score {assessment.alert_score}/100)",
+        fg=colour,
+        bold=True,
+    )
+    if assessment.active_targets:
+        click.echo(f"Detected    : {', '.join(assessment.active_targets)}")
+    else:
+        click.echo("Detected    : none")
+    click.echo("")
+
+    if assessment.gram_negative_detected:
+        click.secho("  Gram-negative uropathogen detected -- urine culture recommended.", fg="red")
+    if assessment.extended_spectrum_resistance_risk:
+        click.secho(
+            "  K. pneumoniae: ESBL/KPC resistance risk -- avoid cephalosporins empirically.",
+            fg="red",
+            bold=True,
+        )
+    if assessment.antibiotic_guidance_required:
+        click.secho(
+            "  Antibiotic guidance: organism identity changes first-line selection.",
+            fg="yellow",
+        )
+
+    click.echo("")
+    click.echo(f"Interpretation: {assessment.interpretation}")
+    click.echo("")
+    click.echo(f"Recommended action: {assessment.recommended_action}")
+
+    if out_json is not None:
+        write_assessment_json(assessment, out_json)
+        click.echo(f"\nAssessment written to {out_json}")
+    if out_csv is not None:
+        write_assessment_csv(assessment, out_csv)
+        click.echo(f"CSV summary written to {out_csv}")
+
+
 if __name__ == "__main__":
     cli()

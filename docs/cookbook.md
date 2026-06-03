@@ -5950,3 +5950,231 @@ events are flagged explicitly in the JSON output.
   *Transbound Emerg Dis* 66(1):431-439.  doi:10.1111/tbed.13044
 - Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
   *Nucleic Acids Res* 28(12):e63.  doi:10.1093/nar/28.12.e63
+
+## Recipe 37 -- POC urinary tract infection four-target panel (`lamp-forge uti-risk`)
+
+**Goal.** A portable BioVind-style four-channel LAMP panel that simultaneously
+detects the four most common community-acquired UTI uropathogens -- *Escherichia
+coli*, *Klebsiella pneumoniae*, *Enterococcus faecalis*, and *Staphylococcus
+saprophyticus* -- and maps the result to an organism-directed prescribing
+recommendation within 60 minutes, at the point of care.
+
+**Why it matters.** Urinary tract infection is the most common bacterial
+infection in primary-care and urgent-care settings (~7 million outpatient
+visits per year in the United States alone).  Empiric antibiotic prescribing
+is the standard of care because urine cultures take 24-48 hours.  Yet resistance
+to first-line agents (fluoroquinolones, trimethoprim-sulfamethoxazole) now
+exceeds 20% for *E. coli* in many locales, and ESBL-producing *K. pneumoniae*
+is intrinsically resistant to cephalosporins.  The right antibiotic depends on
+the organism, and a wrong-class prescription accelerates resistance while failing
+the patient.
+
+A same-visit LAMP result resolves the two questions that drive prescribing:
+**what is the organism?** and **is there a resistance concern?**
+
+| Target | Gene | Community UTI prevalence | Key antibiotic note |
+|---|---|---|---|
+| *E. coli* | uidA | 75-80% | Nitrofurantoin / TMP-SMX first-line; ESBL strains require fosfomycin or carbapenem |
+| *K. pneumoniae* | phoE | 5-10% | ESBL/KPC risk; send culture before prescribing; avoid cephalosporins |
+| *E. faecalis* | ddl | 5-10% | Intrinsic cephalosporin resistance; use ampicillin or nitrofurantoin |
+| *S. saprophyticus* | sdrF | 5-15% young women | Nitrofurantoin / trimethoprim; low-count significant |
+
+**Why this is a BioVind fit.** BioVind's human point-of-care vertical targets
+rural clinics, urgent-care centres, and telemedicine-adjacent collection sites
+where same-visit results change prescribing behaviour.  All four targets are
+DNA-LAMP (no RT step required), making the panel technically simpler than the
+respiratory viral panels and compatible with any isothermal LAMP device at
+63-65 degC.
+
+**Primer design -- one target per run, then combine.**
+
+```bash
+# E. coli uidA (beta-D-glucuronidase -- E. coli-specific, absent in Salmonella/Shigella)
+lamp-forge run --config config/ecoli_uidA.yaml
+
+# K. pneumoniae phoE (phosphate outer-membrane porin, chromosomally encoded)
+lamp-forge run --config config/kpneu_phoE.yaml
+
+# E. faecalis ddl (D-Ala:D-Ala ligase, species-specific variant)
+lamp-forge run --config config/efaec_ddl.yaml
+
+# S. saprophyticus sdrF (serine-aspartate repeat protein F)
+lamp-forge run --config config/ssaph_sdrF.yaml
+```
+
+**Config template for *E. coli* uidA.**
+
+```yaml
+target:
+  name: ecoli_uidA_UTI
+  taxon_id: 562                # Escherichia coli
+  gene: uidA
+  max_sequences: 30
+  email: you@your-inst.edu
+
+off_targets:
+  fasta_dir: input/off_targets_uti
+  min_identity_threshold: 0.80
+  min_coverage_threshold: 0.80
+
+conservation:
+  window_size: 30
+  entropy_threshold: 0.20
+  min_region_length: 200
+
+primer:
+  tm_min: 60.0
+  tm_max: 65.0
+  gc_min: 40.0
+  gc_max: 65.0
+  hairpin_dg_threshold: -2.0
+  dimer_dg_threshold: -5.0
+  amplicon_size:
+    f2_b2_min: 120
+    f2_b2_max: 160
+
+output:
+  dir: results/ecoli_uidA
+  top_n: 5
+  generate_html: true
+  generate_csv: true
+```
+
+**Off-target panel for UTI (`input/off_targets_uti/`).**
+
+| File | NCBI accession | Why |
+|---|---|---|
+| `kpneu_ref.fasta` | NC_009648.1 | Cross-species screen for uidA assay |
+| `ecoli_ref.fasta` | NC_000913.3 | Cross-species screen for phoE assay |
+| `efaecium_ref.fasta` | NC_017960.1 | Distinguish *E. faecalis* from *E. faecium* |
+| `efaecalis_ref.fasta` | NC_004668.1 | Cross-species screen for sdrF assay |
+| `saureus_ref.fasta` | NC_002951.2 | Confirm sdrF is *S. saprophyticus*-specific |
+| `human_urothelium_fragment.fasta` | GRCh38 chr17 region | Host DNA from urine epithelial cells |
+
+**Cross-dimer compatibility screen.**
+
+```bash
+lamp-forge panel \
+  --set Ecoli=results/ecoli_uidA/primer_sets.json \
+  --set Kpneu=results/kpneu_phoE/primer_sets.json \
+  --set Efaec=results/efaec_ddl/primer_sets.json \
+  --set Ssaph=results/ssaph_sdrF/primer_sets.json \
+  --dimer-threshold -5.0 \
+  --out-json results/uti_panel/panel.json \
+  --out-csv  results/uti_panel/panel_summary.csv
+```
+
+**Equimolar pool for the working-stock mix.**
+
+All four targets are DNA-LAMP; use standard pooling stoichiometry
+(FIP/BIP at 16 uM, LF/LB at 4 uM, F3/B3 at 2 uM per target in the 10x stock):
+
+```bash
+lamp-forge pool \
+  --panel-json results/uti_panel/panel.json \
+  --stock-conc 200 \
+  --total-volume 200 \
+  --out-csv results/uti_panel/pool_sheet.csv
+```
+
+**Interpreting a panel result with `lamp-forge uti-risk`.**
+
+Once the device returns positivity flags from a patient urine specimen, feed
+the flags into the risk assessment engine to get a structured prescribing alert:
+
+```bash
+# E. coli-positive uncomplicated UTI
+lamp-forge uti-risk --ecoli
+
+# K. pneumoniae detected -- culture urgently needed
+lamp-forge uti-risk --kpneu --out-json results/uti/kpneu_alert.json
+
+# Polymicrobial E. coli + E. faecalis
+lamp-forge uti-risk --ecoli --efaec --out-csv results/uti/mixed_uti.csv
+
+# S. saprophyticus -- young woman, uncomplicated
+lamp-forge uti-risk --ssaph
+
+# All negative -- send culture
+lamp-forge uti-risk
+```
+
+**Example output for K. pneumoniae-positive UTI.**
+
+```
+POC UTI LAMP Panel Assessment
+========================================
+Alert level : HIGH  (score 35/100)
+Detected    : K.pneu
+
+  Gram-negative uropathogen detected -- urine culture recommended.
+  K. pneumoniae: ESBL/KPC resistance risk -- avoid cephalosporins empirically.
+  Antibiotic guidance: organism identity changes first-line selection.
+
+Interpretation: Klebsiella pneumoniae detected via the phoE assay. K. pneumoniae
+accounts for 5-10% of community UTI and carries a significant risk of ESBL or,
+in healthcare-adjacent patients, KPC-type carbapenemase production.
+
+Recommended action: HIGH: Send urine culture with susceptibility testing before
+committing to empiric therapy. If treatment cannot be deferred, nitrofurantoin
+or fosfomycin are reasonable empiric choices for uncomplicated cystitis while
+awaiting culture results ...
+```
+
+**Alert level reference.**
+
+| Alert level | Score | Meaning | First-line guidance |
+|---|---|---|---|
+| HIGH | >= 35 | Gram-negative uropathogen (*E. coli* or *K. pneumoniae*) | Nitrofurantoin or TMP-SMX (if susceptible); send culture for *K. pneumoniae* |
+| MODERATE | >= 20 | *E. faecalis* alone | Ampicillin or nitrofurantoin; rule out VRE by culture |
+| LOW | >= 10 | *S. saprophyticus* alone | Nitrofurantoin 5-7 days or trimethoprim 7 days |
+| NEGATIVE | 0 | All targets negative | Send conventional urine culture if clinical suspicion persists |
+
+**LOD estimation before ordering primers.**
+
+```bash
+# Typical urine: 200 uL input, 85% extraction, 50 uL eluate, 5 uL reaction input
+lamp-forge lod \
+  --sample-volume 200 \
+  --extraction-efficiency 0.85 \
+  --eluate-volume 50 \
+  --reaction-input 5 \
+  --confidence 0.95
+```
+
+Expect a reportable LOD around 3-6 CFU/mL -- well below the 10^3 CFU/mL
+threshold for *S. saprophyticus* significance and comfortably within the
+10^5 CFU/mL standard for gram-negative UTI.
+
+**Validation plan for regulatory filing.**
+
+BioVind acceptance criteria: Sn >= 95%, Sp >= 99%.
+
+```bash
+lamp-forge validation-plan \
+  --sn-min 0.95 --sp-min 0.99 \
+  --p-expected-pos 0.97 --p-expected-neg 1.00 \
+  --power 0.80 \
+  --out-csv results/uti_panel/validation_plan.csv
+```
+
+**References.**
+
+- Foxman B (2002) Epidemiology of urinary tract infections: incidence,
+  morbidity and economic costs. *Am J Med* 113(Suppl 1A):5S-13S.
+  doi:10.1016/S0002-9343(02)01054-9
+- Gupta K, Hooton TM, Naber KG et al. (2011) International clinical practice
+  guidelines for the treatment of acute uncomplicated cystitis and pyelonephritis
+  in women. *Clin Infect Dis* 52(5):e103-e120. doi:10.1093/cid/ciq257
+- Terlizzi ME, Gribaudo G, Maffei ME (2017) UroPathogenic *Escherichia coli*
+  (UPEC) infections: virulence factors, bladder responses, antibiotic, and
+  non-antibiotic antimicrobial strategies. *Front Microbiol* 8:1566.
+  doi:10.3389/fmicb.2017.01566
+- Peirano G, Pitout JD (2019) Extended-spectrum beta-lactamase-producing
+  *Enterobacteriaceae*: update on molecular epidemiology and treatment options.
+  *Drugs* 79(14):1529-1541. doi:10.1007/s40265-019-01180-3
+- Hedman P, Ringertz O, Lindstrom M, Olsson K (1991) The origin of
+  *Staphylococcus saprophyticus* from cattle and pigs. *Scand J Infect Dis*
+  23(6):769-773. doi:10.3109/00365549109024318
+- Notomi T et al. (2000) Loop-mediated isothermal amplification of DNA.
+  *Nucleic Acids Res* 28(12):e63. doi:10.1093/nar/28.12.e63
